@@ -4,9 +4,9 @@ edition = "2024"
 
 [dependencies]
 # Git dependency (default — works for standalone builds and as a git dependency):
-world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "main" }
-# Local dependency for Docker flow (uncomment for local chain testing):
-# world = { local = "../../../world-contracts/contracts/world" }
+# world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "main" }
+# Local dependency for Docker flow:
+world = { local = "../../../world-contracts/contracts/world" }
 
 [environments]
 localnet          = "3e934cf0"
