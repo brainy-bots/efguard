@@ -23,6 +23,24 @@ Based on the [EVE Frontier builder-scaffold](https://github.com/evefrontier/buil
 | [docker/](./docker/) | Dev container for local Sui node |
 | [setup-world/](./setup-world/) | World contract deployment (for local testing) |
 | [zklogin/](./zklogin/) | zkLogin CLI for OAuth-based signing |
+| [examples/smart-gate/](./examples/smart-gate/) | Example: replacing the scaffold's inline tribe check with ef_guard (3 files changed) |
+
+## Example: integrating ef_guard
+
+The [`examples/smart-gate/`](./examples/smart-gate/) directory shows how to add ef_guard to the standard [builder-scaffold](https://github.com/evefrontier/builder-scaffold) smart gate extension. Only 3 files change:
+
+```move
+// BEFORE (scaffold default — one hardcoded tribe)
+assert!(character.tribe() == tribe_cfg.tribe, ENotStarterTribe);
+
+// AFTER (ef_guard — full rule engine)
+let decision = assembly_binding::resolve_role(binding, gate_id, char_game_id, tribe_id);
+assert!(assembly_binding::is_allow(&decision), EAccessDenied);
+```
+
+This replaces a single tribe check with support for multiple tribes, individual character rules, a blocklist, and configurable priority — all updatable on-chain without redeploying.
+
+A standalone two-commit version is also available at [brainy-bots/efguard-gate-example](https://github.com/brainy-bots/efguard-gate-example).
 
 ## Prerequisites
 
