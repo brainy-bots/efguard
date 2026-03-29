@@ -1,7 +1,7 @@
 #[test_only]
 #[allow(unused_const, unused_let_mut, unused_trailing_semi, duplicate_alias)]
 module ef_guard::ssu_extension_tests {
-    use ef_guard::{assembly_binding, ssu_extension};
+    use ef_guard::{assembly_binding, ssu_extension, condition_character, condition_everyone};
     use std::{string::utf8, unit_test::destroy};
     use sui::{clock, test_scenario as ts, transfer};
     use world::{
@@ -223,33 +223,45 @@ module ef_guard::ssu_extension_tests {
         ts::return_shared(character);
     }
 
+    // ── Condition helpers ─────────────────────────────────────────────────────
+
+    fun create_char_a_condition(ts: &mut ts::Scenario): ID {
+        ts::next_tx(ts, user_a());
+        let cond = condition_character::new(CHAR_A_GAME_ID, ts.ctx());
+        let cond_id = object::id(&cond);
+        condition_character::share(cond);
+        cond_id
+    }
+
     // ── Policy factory helpers ────────────────────────────────────────────────
 
-    /// Binding where CHAR_A is allowed on the given SSU via inline policy rules.
-    fun make_allow_binding_for_char_a(ssu_id: ID, ctx: &mut TxContext): assembly_binding::AssemblyBinding {
+    /// Binding where CHAR_A is allowed on the given SSU via condition-based rules.
+    fun make_allow_binding_for_char_a(
+        ssu_id: ID,
+        char_cond_id: ID,
+        ctx: &mut TxContext,
+    ): assembly_binding::AssemblyBinding {
         let mut binding = assembly_binding::new_binding(ctx);
         assembly_binding::register_ssu(&mut binding, ssu_id, ctx);
         assembly_binding::set_policy(
             &mut binding, ssu_id,
-            vector[assembly_binding::rule(
-                assembly_binding::character(CHAR_A_GAME_ID),
-                assembly_binding::allow(),
-            )],
+            vector[assembly_binding::rule(char_cond_id, assembly_binding::allow())],
             ctx,
         );
         binding
     }
 
-    /// Binding where CHAR_A is denied on the given SSU via inline policy rules.
-    fun make_deny_binding_for_char_a(ssu_id: ID, ctx: &mut TxContext): assembly_binding::AssemblyBinding {
+    /// Binding where CHAR_A is denied on the given SSU via condition-based rules.
+    fun make_deny_binding_for_char_a(
+        ssu_id: ID,
+        char_cond_id: ID,
+        ctx: &mut TxContext,
+    ): assembly_binding::AssemblyBinding {
         let mut binding = assembly_binding::new_binding(ctx);
         assembly_binding::register_ssu(&mut binding, ssu_id, ctx);
         assembly_binding::set_policy(
             &mut binding, ssu_id,
-            vector[assembly_binding::rule(
-                assembly_binding::character(CHAR_A_GAME_ID),
-                assembly_binding::deny(),
-            )],
+            vector[assembly_binding::rule(char_cond_id, assembly_binding::deny())],
             ctx,
         );
         binding
@@ -265,6 +277,20 @@ module ef_guard::ssu_extension_tests {
     /// Empty binding -- no policies, no blocklist. Any character resolves to Default (denied).
     fun make_empty_binding(ctx: &mut TxContext): assembly_binding::AssemblyBinding {
         assembly_binding::new_binding(ctx)
+    }
+
+    /// Build condition proofs for CHAR_A given a character condition.
+    fun build_char_a_proofs(
+        ts: &ts::Scenario,
+        char_cond_id: ID,
+        binding: &assembly_binding::AssemblyBinding,
+        ssu_id: ID,
+    ): vector<assembly_binding::ConditionProof> {
+        let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(ts, char_cond_id);
+        let eval_ctx = assembly_binding::build_eval_context(binding, ssu_id, CHAR_A_GAME_ID, TRIBE_X, user_a());
+        let proofs = vector[condition_character::verify(&char_cond, &eval_ctx)];
+        ts::return_shared(char_cond);
+        proofs
     }
 
     // ── Config tests ──────────────────────────────────────────────────────────
@@ -302,20 +328,22 @@ module ef_guard::ssu_extension_tests {
         online_ssu(&mut ts, char_id, ssu_id, nwn_id);
         let config_id = authorize_ef_guard_ssu(&mut ts, char_id, ssu_id, true, true);
         mint_ammo(&mut ts, char_id, ssu_id);
+        let char_cond_id = create_char_a_condition(&mut ts);
 
         ts::next_tx(&mut ts, user_a());
         {
             let config = ts::take_shared_by_id<ssu_extension::SSUExtensionConfig>(&ts, config_id);
             let mut ssu = ts::take_shared_by_id<StorageUnit>(&ts, ssu_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_allow_binding_for_char_a(ssu_id, ts.ctx());
+            let binding = make_allow_binding_for_char_a(ssu_id, char_cond_id, ts.ctx());
+            let proofs = build_char_a_proofs(&ts, char_cond_id, &binding, ssu_id);
 
             let item = ssu_extension::withdraw(
                 &config, &binding, &mut ssu, &character,
-                AMMO_TYPE_ID, AMMO_QUANTITY, ts.ctx(),
+                AMMO_TYPE_ID, AMMO_QUANTITY, &proofs, ts.ctx(),
             );
             // Item has no drop -- deposit back to clean up
-            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, ts.ctx());
+            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, &proofs, ts.ctx());
 
             ts::return_shared(config);
             ts::return_shared(ssu);
@@ -336,16 +364,19 @@ module ef_guard::ssu_extension_tests {
         online_ssu(&mut ts, char_id, ssu_id, nwn_id);
         let config_id = authorize_ef_guard_ssu(&mut ts, char_id, ssu_id, true, false);
         mint_ammo(&mut ts, char_id, ssu_id);
+        let char_cond_id = create_char_a_condition(&mut ts);
 
         ts::next_tx(&mut ts, user_a());
         {
             let config = ts::take_shared_by_id<ssu_extension::SSUExtensionConfig>(&ts, config_id);
             let mut ssu = ts::take_shared_by_id<StorageUnit>(&ts, ssu_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_allow_binding_for_char_a(ssu_id, ts.ctx());
+            let binding = make_allow_binding_for_char_a(ssu_id, char_cond_id, ts.ctx());
+            let proofs = build_char_a_proofs(&ts, char_cond_id, &binding, ssu_id);
+
             let item = ssu_extension::withdraw(
                 &config, &binding, &mut ssu, &character,
-                AMMO_TYPE_ID, AMMO_QUANTITY, ts.ctx(),
+                AMMO_TYPE_ID, AMMO_QUANTITY, &proofs, ts.ctx(),
             );
             transfer::public_transfer(item, @0x0); // unreachable -- abort fires first
             abort 999
@@ -370,9 +401,11 @@ module ef_guard::ssu_extension_tests {
             let mut ssu = ts::take_shared_by_id<StorageUnit>(&ts, ssu_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
             let binding = make_blocklist_binding(ts.ctx());
+            let proofs = vector[];
+
             let item = ssu_extension::withdraw(
                 &config, &binding, &mut ssu, &character,
-                AMMO_TYPE_ID, AMMO_QUANTITY, ts.ctx(),
+                AMMO_TYPE_ID, AMMO_QUANTITY, &proofs, ts.ctx(),
             );
             transfer::public_transfer(item, @0x0); // unreachable -- abort fires first
             abort 999
@@ -397,9 +430,11 @@ module ef_guard::ssu_extension_tests {
             let mut ssu = ts::take_shared_by_id<StorageUnit>(&ts, ssu_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
             let binding = make_empty_binding(ts.ctx());
+            let proofs = vector[];
+
             let item = ssu_extension::withdraw(
                 &config, &binding, &mut ssu, &character,
-                AMMO_TYPE_ID, AMMO_QUANTITY, ts.ctx(),
+                AMMO_TYPE_ID, AMMO_QUANTITY, &proofs, ts.ctx(),
             );
             transfer::public_transfer(item, @0x0); // unreachable -- abort fires first
             abort 999
@@ -418,21 +453,23 @@ module ef_guard::ssu_extension_tests {
         online_ssu(&mut ts, char_id, ssu_id, nwn_id);
         let config_id = authorize_ef_guard_ssu(&mut ts, char_id, ssu_id, true, true);
         mint_ammo(&mut ts, char_id, ssu_id);
+        let char_cond_id = create_char_a_condition(&mut ts);
 
         ts::next_tx(&mut ts, user_a());
         {
             let config = ts::take_shared_by_id<ssu_extension::SSUExtensionConfig>(&ts, config_id);
             let mut ssu = ts::take_shared_by_id<StorageUnit>(&ts, ssu_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_allow_binding_for_char_a(ssu_id, ts.ctx());
+            let binding = make_allow_binding_for_char_a(ssu_id, char_cond_id, ts.ctx());
+            let proofs = build_char_a_proofs(&ts, char_cond_id, &binding, ssu_id);
 
             // Withdraw first to get an Item value to deposit
             let item = ssu_extension::withdraw(
                 &config, &binding, &mut ssu, &character,
-                AMMO_TYPE_ID, AMMO_QUANTITY, ts.ctx(),
+                AMMO_TYPE_ID, AMMO_QUANTITY, &proofs, ts.ctx(),
             );
             // Deposit -- the operation under test
-            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, ts.ctx());
+            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, &proofs, ts.ctx());
 
             ts::return_shared(config);
             ts::return_shared(ssu);
@@ -453,6 +490,7 @@ module ef_guard::ssu_extension_tests {
         online_ssu(&mut ts, char_id, ssu_id, nwn_id);
         let config_id = authorize_ef_guard_ssu(&mut ts, char_id, ssu_id, false, true);
         mint_ammo(&mut ts, char_id, ssu_id);
+        let char_cond_id = create_char_a_condition(&mut ts);
 
         ts::next_tx(&mut ts, user_a());
         {
@@ -469,9 +507,11 @@ module ef_guard::ssu_extension_tests {
             let item = ssu.withdraw_by_owner(&character, &cap, AMMO_TYPE_ID, AMMO_QUANTITY, ts.ctx());
             character.return_owner_cap(cap, receipt);
 
-            let binding = make_allow_binding_for_char_a(ssu_id, ts.ctx());
+            let binding = make_allow_binding_for_char_a(ssu_id, char_cond_id, ts.ctx());
+            let proofs = build_char_a_proofs(&ts, char_cond_id, &binding, ssu_id);
+
             // allow_deposit=false -> EDepositDisabled
-            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, ts.ctx());
+            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, &proofs, ts.ctx());
             abort 999
         };
     }
@@ -503,7 +543,8 @@ module ef_guard::ssu_extension_tests {
             character.return_owner_cap(cap, receipt);
 
             let binding = make_blocklist_binding(ts.ctx());
-            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, ts.ctx());
+            let proofs = vector[];
+            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, &proofs, ts.ctx());
             abort 999
         };
     }
@@ -519,6 +560,7 @@ module ef_guard::ssu_extension_tests {
         online_ssu(&mut ts, char_id, ssu_id, nwn_id);
         let config_id = authorize_ef_guard_ssu(&mut ts, char_id, ssu_id, true, true);
         mint_ammo(&mut ts, char_id, ssu_id);
+        let char_cond_id = create_char_a_condition(&mut ts);
 
         ts::next_tx(&mut ts, user_a());
         {
@@ -535,8 +577,9 @@ module ef_guard::ssu_extension_tests {
             character.return_owner_cap(cap, receipt);
 
             // Policy denies char_a -> EAccessDenied
-            let binding = make_deny_binding_for_char_a(ssu_id, ts.ctx());
-            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, ts.ctx());
+            let binding = make_deny_binding_for_char_a(ssu_id, char_cond_id, ts.ctx());
+            let proofs = build_char_a_proofs(&ts, char_cond_id, &binding, ssu_id);
+            ssu_extension::deposit(&config, &binding, &mut ssu, &character, item, &proofs, ts.ctx());
             abort 999
         };
     }
@@ -564,6 +607,7 @@ module ef_guard::ssu_extension_tests {
         // Also authorize ssu2 so the world-level extension check passes
         authorize_ef_guard_ssu(&mut ts, char_id, ssu2_id, true, true);
         mint_ammo(&mut ts, char_id, ssu2_id);
+        let char_cond_id = create_char_a_condition(&mut ts);
 
         ts::next_tx(&mut ts, user_a());
         {
@@ -571,10 +615,12 @@ module ef_guard::ssu_extension_tests {
             let config1 = ts::take_shared_by_id<ssu_extension::SSUExtensionConfig>(&ts, config1_id);
             let mut ssu2 = ts::take_shared_by_id<StorageUnit>(&ts, ssu2_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_allow_binding_for_char_a(ssu1_id, ts.ctx());
+            let binding = make_allow_binding_for_char_a(ssu1_id, char_cond_id, ts.ctx());
+            let proofs = build_char_a_proofs(&ts, char_cond_id, &binding, ssu1_id);
+
             let item = ssu_extension::withdraw(
                 &config1, &binding, &mut ssu2, &character,
-                AMMO_TYPE_ID, AMMO_QUANTITY, ts.ctx(),
+                AMMO_TYPE_ID, AMMO_QUANTITY, &proofs, ts.ctx(),
             );
             transfer::public_transfer(item, @0x0); // unreachable -- EWrongSSU fires first
             abort 999

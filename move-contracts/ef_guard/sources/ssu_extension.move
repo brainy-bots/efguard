@@ -1,6 +1,6 @@
 /// Smart Storage Unit extension. Policy-checking proxy for deposit/withdraw.
 module ef_guard::ssu_extension {
-    use ef_guard::assembly_binding::{Self, AssemblyBinding};
+    use ef_guard::assembly_binding::{Self, AssemblyBinding, ConditionProof};
     use ef_guard::identity_resolver;
     use world::access::{Self, OwnerCap};
     use world::character::Character;
@@ -49,12 +49,13 @@ module ef_guard::ssu_extension {
     }
 
     public fun deposit(
-        config:    &SSUExtensionConfig,
-        binding:   &AssemblyBinding,
-        ssu:       &mut StorageUnit,
-        character: &Character,
-        item:      Item,
-        ctx:       &mut TxContext,
+        config:           &SSUExtensionConfig,
+        binding:          &AssemblyBinding,
+        ssu:              &mut StorageUnit,
+        character:        &Character,
+        item:             Item,
+        condition_proofs: &vector<ConditionProof>,
+        ctx:              &mut TxContext,
     ) {
         assert!(object::id(ssu) == config.ssu_id, EWrongSSU);
         let (char_game_id, tribe_id) = identity_resolver::resolve(character);
@@ -64,19 +65,20 @@ module ef_guard::ssu_extension {
             abort EDepositDisabled
         };
 
-        check_access(config, binding, char_game_id, tribe_id, 0);
+        check_access(config, binding, char_game_id, tribe_id, condition_proofs, 0);
         storage_unit::deposit_item<EfGuardSSUAuth>(ssu, character, item, EfGuardSSUAuth {}, ctx);
         emit_event(config, char_game_id, tribe_id, 0, true, 0);
     }
 
     public fun withdraw(
-        config:    &SSUExtensionConfig,
-        binding:   &AssemblyBinding,
-        ssu:       &mut StorageUnit,
-        character: &Character,
-        type_id:   u64,
-        quantity:  u32,
-        ctx:       &mut TxContext,
+        config:           &SSUExtensionConfig,
+        binding:          &AssemblyBinding,
+        ssu:              &mut StorageUnit,
+        character:        &Character,
+        type_id:          u64,
+        quantity:         u32,
+        condition_proofs: &vector<ConditionProof>,
+        ctx:              &mut TxContext,
     ): Item {
         assert!(object::id(ssu) == config.ssu_id, EWrongSSU);
         let (char_game_id, tribe_id) = identity_resolver::resolve(character);
@@ -86,7 +88,7 @@ module ef_guard::ssu_extension {
             abort EWithdrawDisabled
         };
 
-        check_access(config, binding, char_game_id, tribe_id, 1);
+        check_access(config, binding, char_game_id, tribe_id, condition_proofs, 1);
         let item = storage_unit::withdraw_item<EfGuardSSUAuth>(
             ssu, character, EfGuardSSUAuth {}, type_id, quantity, ctx,
         );
@@ -108,13 +110,14 @@ module ef_guard::ssu_extension {
     public fun share_config(config: SSUExtensionConfig) { transfer::share_object(config); }
 
     fun check_access(
-        config:       &SSUExtensionConfig,
-        binding:      &AssemblyBinding,
-        char_game_id: u64,
-        tribe_id:     u32,
-        action:       u8,
+        config:           &SSUExtensionConfig,
+        binding:          &AssemblyBinding,
+        char_game_id:     u64,
+        tribe_id:         u32,
+        condition_proofs: &vector<ConditionProof>,
+        action:           u8,
     ) {
-        let decision = assembly_binding::resolve_role(binding, config.ssu_id, char_game_id, tribe_id);
+        let decision = assembly_binding::resolve_role(binding, config.ssu_id, char_game_id, condition_proofs);
         if (!assembly_binding::is_allow(&decision)) {
             let reason = if (assembly_binding::is_deny(&decision)) { 1 } else { 2 };
             emit_event(config, char_game_id, tribe_id, action, false, reason);

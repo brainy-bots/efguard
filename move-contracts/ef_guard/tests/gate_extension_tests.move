@@ -1,7 +1,7 @@
 #[test_only]
 #[allow(unused_use, unused_let_mut, unused_trailing_semi)]
 module ef_guard::gate_extension_tests {
-    use ef_guard::{assembly_binding, gate_extension};
+    use ef_guard::{assembly_binding, gate_extension, condition_character, condition_everyone};
     use std::{bcs, string::utf8, unit_test::destroy};
     use sui::{clock, test_scenario as ts};
     use world::{
@@ -225,33 +225,53 @@ module ef_guard::gate_extension_tests {
         config_id
     }
 
-    // ── Policy helpers ────────────────────────────────────────────────────────
+    // ── Condition + Policy helpers ────────────────────────────────────────────
+
+    /// Create a character condition for CHAR_A, share it, return its ID.
+    fun create_char_a_condition(ts: &mut ts::Scenario): ID {
+        ts::next_tx(ts, user_a());
+        let cond = condition_character::new(CHAR_A_GAME_ID, ts.ctx());
+        let cond_id = object::id(&cond);
+        condition_character::share(cond);
+        cond_id
+    }
+
+    /// Create an everyone condition, share it, return its ID.
+    fun create_everyone_condition(ts: &mut ts::Scenario): ID {
+        ts::next_tx(ts, user_a());
+        let cond = condition_everyone::new(ts.ctx());
+        let cond_id = object::id(&cond);
+        condition_everyone::share(cond);
+        cond_id
+    }
 
     /// Binding with a policy that allows CHAR_A on the given gate.
-    fun make_allow_binding(gate_id: ID, ctx: &mut TxContext): assembly_binding::AssemblyBinding {
+    fun make_allow_binding(
+        gate_id: ID,
+        char_cond_id: ID,
+        ctx: &mut TxContext,
+    ): assembly_binding::AssemblyBinding {
         let mut b = assembly_binding::new_binding(ctx);
         assembly_binding::register_gate(&mut b, gate_id, ctx);
         assembly_binding::set_policy(
             &mut b, gate_id,
-            vector[assembly_binding::rule(
-                assembly_binding::character(CHAR_A_GAME_ID),
-                assembly_binding::allow(),
-            )],
+            vector[assembly_binding::rule(char_cond_id, assembly_binding::allow())],
             ctx,
         );
         b
     }
 
     /// Binding with a policy that denies CHAR_A on the given gate.
-    fun make_deny_binding(gate_id: ID, ctx: &mut TxContext): assembly_binding::AssemblyBinding {
+    fun make_deny_binding(
+        gate_id: ID,
+        char_cond_id: ID,
+        ctx: &mut TxContext,
+    ): assembly_binding::AssemblyBinding {
         let mut b = assembly_binding::new_binding(ctx);
         assembly_binding::register_gate(&mut b, gate_id, ctx);
         assembly_binding::set_policy(
             &mut b, gate_id,
-            vector[assembly_binding::rule(
-                assembly_binding::character(CHAR_A_GAME_ID),
-                assembly_binding::deny(),
-            )],
+            vector[assembly_binding::rule(char_cond_id, assembly_binding::deny())],
             ctx,
         );
         b
@@ -265,6 +285,22 @@ module ef_guard::gate_extension_tests {
 
     fun make_empty_binding(ctx: &mut TxContext): assembly_binding::AssemblyBinding {
         assembly_binding::new_binding(ctx)
+    }
+
+    /// Build condition proofs for CHAR_A given a character condition and eval context.
+    fun build_char_a_proofs(
+        ts: &mut ts::Scenario,
+        char_cond_id: ID,
+        binding: &assembly_binding::AssemblyBinding,
+        gate_id: ID,
+    ): vector<assembly_binding::ConditionProof> {
+        let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(ts, char_cond_id);
+        let eval_ctx = assembly_binding::build_eval_context(binding, gate_id, CHAR_A_GAME_ID, TRIBE_X, user_a());
+        let proofs = vector[
+            condition_character::verify(&char_cond, &eval_ctx),
+        ];
+        ts::return_shared(char_cond);
+        proofs
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────
@@ -305,17 +341,26 @@ module ef_guard::gate_extension_tests {
         let config_a_id = authorize_ef_guard_gate(&mut ts, char_id, gate_a_id);
         authorize_ef_guard_gate(&mut ts, char_id, gate_b_id);
 
+        // Create condition objects
+        let char_cond_id = create_char_a_condition(&mut ts);
+
         ts::next_tx(&mut ts, user_a());
         {
             let config_a = ts::take_shared_by_id<gate_extension::GateExtensionConfig>(&ts, config_a_id);
             let gate_a = ts::take_shared_by_id<Gate>(&ts, gate_a_id);
             let gate_b = ts::take_shared_by_id<Gate>(&ts, gate_b_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_allow_binding(gate_a_id, ts.ctx());
+            let binding = make_allow_binding(gate_a_id, char_cond_id, ts.ctx());
             let clock = clock::create_for_testing(ts.ctx());
 
+            // Build proofs
+            let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(&ts, char_cond_id);
+            let eval_ctx = assembly_binding::build_eval_context(&binding, gate_a_id, CHAR_A_GAME_ID, TRIBE_X, user_a());
+            let proofs = vector[condition_character::verify(&char_cond, &eval_ctx)];
+            ts::return_shared(char_cond);
+
             gate_extension::request_permit(
-                &config_a, &binding, &gate_a, &gate_b,
+                &config_a, &binding, &proofs, &gate_a, &gate_b,
                 &character, &clock, ts.ctx(),
             );
 
@@ -351,17 +396,24 @@ module ef_guard::gate_extension_tests {
         let config_a_id = authorize_ef_guard_gate(&mut ts, char_id, gate_a_id);
         authorize_ef_guard_gate(&mut ts, char_id, gate_b_id);
 
+        let char_cond_id = create_char_a_condition(&mut ts);
+
         ts::next_tx(&mut ts, user_a());
         {
             let config_a = ts::take_shared_by_id<gate_extension::GateExtensionConfig>(&ts, config_a_id);
             let gate_a = ts::take_shared_by_id<Gate>(&ts, gate_a_id);
             let gate_b = ts::take_shared_by_id<Gate>(&ts, gate_b_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_deny_binding(gate_a_id, ts.ctx());
+            let binding = make_deny_binding(gate_a_id, char_cond_id, ts.ctx());
             let clock = clock::create_for_testing(ts.ctx());
 
+            let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(&ts, char_cond_id);
+            let eval_ctx = assembly_binding::build_eval_context(&binding, gate_a_id, CHAR_A_GAME_ID, TRIBE_X, user_a());
+            let proofs = vector[condition_character::verify(&char_cond, &eval_ctx)];
+            ts::return_shared(char_cond);
+
             gate_extension::request_permit(
-                &config_a, &binding, &gate_a, &gate_b,
+                &config_a, &binding, &proofs, &gate_a, &gate_b,
                 &character, &clock, ts.ctx(),
             );
             abort 999
@@ -391,9 +443,10 @@ module ef_guard::gate_extension_tests {
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
             let binding = make_blocklist_binding(ts.ctx());
             let clock = clock::create_for_testing(ts.ctx());
+            let proofs = vector[];
 
             gate_extension::request_permit(
-                &config_a, &binding, &gate_a, &gate_b,
+                &config_a, &binding, &proofs, &gate_a, &gate_b,
                 &character, &clock, ts.ctx(),
             );
             abort 999
@@ -423,9 +476,10 @@ module ef_guard::gate_extension_tests {
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
             let binding = make_empty_binding(ts.ctx());
             let clock = clock::create_for_testing(ts.ctx());
+            let proofs = vector[];
 
             gate_extension::request_permit(
-                &config_a, &binding, &gate_a, &gate_b,
+                &config_a, &binding, &proofs, &gate_a, &gate_b,
                 &character, &clock, ts.ctx(),
             );
             abort 999
@@ -449,18 +503,25 @@ module ef_guard::gate_extension_tests {
         let config_a_id = authorize_ef_guard_gate(&mut ts, char_id, gate_a_id);
         authorize_ef_guard_gate(&mut ts, char_id, gate_b_id);
 
+        let char_cond_id = create_char_a_condition(&mut ts);
+
         ts::next_tx(&mut ts, user_a());
         {
             let config_a = ts::take_shared_by_id<gate_extension::GateExtensionConfig>(&ts, config_a_id);
             let gate_a = ts::take_shared_by_id<Gate>(&ts, gate_a_id);
             let gate_b = ts::take_shared_by_id<Gate>(&ts, gate_b_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_allow_binding(gate_a_id, ts.ctx());
+            let binding = make_allow_binding(gate_a_id, char_cond_id, ts.ctx());
             let clock = clock::create_for_testing(ts.ctx());
+
+            let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(&ts, char_cond_id);
+            let eval_ctx = assembly_binding::build_eval_context(&binding, gate_a_id, CHAR_A_GAME_ID, TRIBE_X, user_a());
+            let proofs = vector[condition_character::verify(&char_cond, &eval_ctx)];
+            ts::return_shared(char_cond);
 
             // config_a.gate_id == gate_a_id, but we pass gate_b as source -> EWrongGate
             gate_extension::request_permit(
-                &config_a, &binding, &gate_b, &gate_a,
+                &config_a, &binding, &proofs, &gate_b, &gate_a,
                 &character, &clock, ts.ctx(),
             );
             abort 999
@@ -481,18 +542,25 @@ module ef_guard::gate_extension_tests {
         let config_a_id = authorize_ef_guard_gate(&mut ts, char_id, gate_a_id);
         authorize_ef_guard_gate(&mut ts, char_id, gate_b_id);
 
+        let char_cond_id = create_char_a_condition(&mut ts);
+
         ts::next_tx(&mut ts, user_a());
         {
             let config_a = ts::take_shared_by_id<gate_extension::GateExtensionConfig>(&ts, config_a_id);
             let gate_a = ts::take_shared_by_id<Gate>(&ts, gate_a_id);
             let gate_b = ts::take_shared_by_id<Gate>(&ts, gate_b_id);
             let character = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_allow_binding(gate_a_id, ts.ctx());
+            let binding = make_allow_binding(gate_a_id, char_cond_id, ts.ctx());
             let mut clock = clock::create_for_testing(ts.ctx());
             clock.set_for_testing(1_000_000);
 
+            let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(&ts, char_cond_id);
+            let eval_ctx = assembly_binding::build_eval_context(&binding, gate_a_id, CHAR_A_GAME_ID, TRIBE_X, user_a());
+            let proofs = vector[condition_character::verify(&char_cond, &eval_ctx)];
+            ts::return_shared(char_cond);
+
             gate_extension::request_permit(
-                &config_a, &binding, &gate_a, &gate_b,
+                &config_a, &binding, &proofs, &gate_a, &gate_b,
                 &character, &clock, ts.ctx(),
             );
 
