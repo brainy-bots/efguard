@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { RuleTarget } from '../types'
+import { DATAHUB_API_URL } from '../env'
 
 interface TribeInfo { id: number; name: string; nameShort: string }
 
@@ -8,7 +9,7 @@ function useTribes() {
   return useQuery({
     queryKey: ['datahub-tribes'],
     queryFn: async (): Promise<TribeInfo[]> => {
-      const res = await fetch('https://world-api-stillness.live.tech.evefrontier.com/v2/tribes')
+      const res = await fetch(`${DATAHUB_API_URL}/v2/tribes`)
       const data = await res.json()
       return (data.data ?? []) as TribeInfo[]
     },

@@ -10,6 +10,7 @@ services:
       - sui-config:/root/.sui
       - ../:/workspace/builder-scaffold
       - ./world-contracts:/workspace/world-contracts
+      - ../../frontier-market:/workspace/frontier-market
 
 volumes:
   sui-config:

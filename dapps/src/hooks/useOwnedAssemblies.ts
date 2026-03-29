@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { executeGraphQLQuery, getOwnedObjectsByType } from '@evefrontier/dapp-kit'
-import { WORLD_PKG } from '../env'
+import { WORLD_PKG, DATAHUB_API_URL } from '../env'
 
 export interface AssemblyDetails {
   /** Player-set custom name (from on-chain metadata) */
@@ -73,7 +73,7 @@ async function fetchTypeNames(typeIds: string[]): Promise<Map<string, string>> {
     unique.map(async (tid) => {
       try {
         const res = await fetch(
-          `https://world-api-stillness.live.tech.evefrontier.com/v2/types/${tid}`,
+          `${DATAHUB_API_URL}/v2/types/${tid}`,
         )
         if (!res.ok) return
         const data = await res.json()
