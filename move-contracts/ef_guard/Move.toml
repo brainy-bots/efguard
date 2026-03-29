@@ -3,13 +3,13 @@ name    = "ef_guard"
 edition = "2024"
 
 [dependencies]
-# Local dependency for Docker flow (fast iteration):
-world = { local = "../../../world-contracts/contracts/world" }
-# Git dependency for standalone builds:
-# world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "main" }
+# Git dependency (default — works for standalone builds and as a git dependency):
+world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "main" }
+# Local dependency for Docker flow (uncomment for local chain testing):
+# world = { local = "../../../world-contracts/contracts/world" }
 
 [environments]
-localnet          = "80195ca4"
+localnet          = "3e934cf0"
 testnet_internal  = "4c78adac"
 testnet_utopia    = "4c78adac"
 testnet_stillness = "4c78adac"
