@@ -568,4 +568,245 @@ module ef_guard::assembly_binding_tests {
 
         destroy(binding);
     }
+
+    // ── Condition system tests ───────────────────────────────────────────────
+
+    // Fake condition ID — in real usage this would be a shared ConditionConfig object's ID
+    const CONDITION_ADDR: address = @0xC0DE;
+
+    #[test]
+    fun conditional_rule_allows_when_proof_passes() {
+        let mut ctx = tx_context::dummy();
+        let gate_id = object::id_from_address(GATE_ADDR);
+        let condition_id = object::id_from_address(CONDITION_ADDR);
+        let mut binding = assembly_binding::new_binding(&mut ctx);
+        assembly_binding::register_gate(&mut binding, gate_id, &ctx);
+
+        // Rule: Tribe X → Allow, but only if condition passes
+        assembly_binding::set_policy(&mut binding, gate_id, vector[
+            assembly_binding::conditional_rule(
+                assembly_binding::tribe(TRIBE_X),
+                assembly_binding::allow(),
+                condition_id,
+            ),
+            assembly_binding::rule(assembly_binding::everyone(), assembly_binding::deny()),
+        ], &ctx);
+
+        // With passing proof → Allow
+        let proofs = vector[
+            assembly_binding::new_condition_proof(condition_id, true),
+        ];
+        let decision = assembly_binding::resolve_role_with_conditions(
+            &binding, gate_id, CHAR_A, TRIBE_X, &proofs,
+        );
+        assert!(assembly_binding::is_allow(&decision));
+
+        destroy(binding);
+    }
+
+    #[test]
+    fun conditional_rule_skipped_when_proof_fails() {
+        let mut ctx = tx_context::dummy();
+        let gate_id = object::id_from_address(GATE_ADDR);
+        let condition_id = object::id_from_address(CONDITION_ADDR);
+        let mut binding = assembly_binding::new_binding(&mut ctx);
+        assembly_binding::register_gate(&mut binding, gate_id, &ctx);
+
+        // Rule 1: Tribe X → Allow (requires condition)
+        // Rule 2: Everyone → Deny (no condition)
+        assembly_binding::set_policy(&mut binding, gate_id, vector[
+            assembly_binding::conditional_rule(
+                assembly_binding::tribe(TRIBE_X),
+                assembly_binding::allow(),
+                condition_id,
+            ),
+            assembly_binding::rule(assembly_binding::everyone(), assembly_binding::deny()),
+        ], &ctx);
+
+        // With failing proof → skips rule 1, falls through to rule 2 → Deny
+        let proofs = vector[
+            assembly_binding::new_condition_proof(condition_id, false),
+        ];
+        let decision = assembly_binding::resolve_role_with_conditions(
+            &binding, gate_id, CHAR_A, TRIBE_X, &proofs,
+        );
+        assert!(assembly_binding::is_deny(&decision));
+
+        destroy(binding);
+    }
+
+    #[test]
+    fun conditional_rule_skipped_when_no_proof_provided() {
+        let mut ctx = tx_context::dummy();
+        let gate_id = object::id_from_address(GATE_ADDR);
+        let condition_id = object::id_from_address(CONDITION_ADDR);
+        let mut binding = assembly_binding::new_binding(&mut ctx);
+        assembly_binding::register_gate(&mut binding, gate_id, &ctx);
+
+        assembly_binding::set_policy(&mut binding, gate_id, vector[
+            assembly_binding::conditional_rule(
+                assembly_binding::tribe(TRIBE_X),
+                assembly_binding::allow(),
+                condition_id,
+            ),
+            assembly_binding::rule(assembly_binding::everyone(), assembly_binding::deny()),
+        ], &ctx);
+
+        // No proofs at all → conditional rule skipped → Everyone Deny
+        let empty_proofs = vector[];
+        let decision = assembly_binding::resolve_role_with_conditions(
+            &binding, gate_id, CHAR_A, TRIBE_X, &empty_proofs,
+        );
+        assert!(assembly_binding::is_deny(&decision));
+
+        destroy(binding);
+    }
+
+    #[test]
+    fun resolve_role_skips_conditional_rules() {
+        // resolve_role (no proofs) should skip conditional rules
+        let mut ctx = tx_context::dummy();
+        let gate_id = object::id_from_address(GATE_ADDR);
+        let condition_id = object::id_from_address(CONDITION_ADDR);
+        let mut binding = assembly_binding::new_binding(&mut ctx);
+        assembly_binding::register_gate(&mut binding, gate_id, &ctx);
+
+        assembly_binding::set_policy(&mut binding, gate_id, vector[
+            assembly_binding::conditional_rule(
+                assembly_binding::tribe(TRIBE_X),
+                assembly_binding::allow(),
+                condition_id,
+            ),
+            assembly_binding::rule(assembly_binding::everyone(), assembly_binding::deny()),
+        ], &ctx);
+
+        // resolve_role (backwards compat) → no proofs → skips conditional → Deny
+        let decision = assembly_binding::resolve_role(&binding, gate_id, CHAR_A, TRIBE_X);
+        assert!(assembly_binding::is_deny(&decision));
+
+        destroy(binding);
+    }
+
+    #[test]
+    fun mixed_rules_and_conditions() {
+        let mut ctx = tx_context::dummy();
+        let gate_id = object::id_from_address(GATE_ADDR);
+        let condition_id = object::id_from_address(CONDITION_ADDR);
+        let mut binding = assembly_binding::new_binding(&mut ctx);
+        assembly_binding::register_gate(&mut binding, gate_id, &ctx);
+
+        // Rule 1: Character A → Allow (no condition — VIP)
+        // Rule 2: Tribe X → Allow (requires NFT condition)
+        // Rule 3: Everyone → Deny
+        assembly_binding::set_policy(&mut binding, gate_id, vector[
+            assembly_binding::rule(assembly_binding::character(CHAR_A), assembly_binding::allow()),
+            assembly_binding::conditional_rule(
+                assembly_binding::tribe(TRIBE_X),
+                assembly_binding::allow(),
+                condition_id,
+            ),
+            assembly_binding::rule(assembly_binding::everyone(), assembly_binding::deny()),
+        ], &ctx);
+
+        let proofs = vector[
+            assembly_binding::new_condition_proof(condition_id, true),
+        ];
+
+        // CHAR_A (any tribe) → matches rule 1 (no condition) → Allow
+        assert!(assembly_binding::is_allow(
+            &assembly_binding::resolve_role_with_conditions(&binding, gate_id, CHAR_A, TRIBE_Y, &proofs),
+        ));
+
+        // CHAR_B in TRIBE_X with proof → matches rule 2 (condition passes) → Allow
+        assert!(assembly_binding::is_allow(
+            &assembly_binding::resolve_role_with_conditions(&binding, gate_id, CHAR_B, TRIBE_X, &proofs),
+        ));
+
+        // CHAR_B in TRIBE_X without proof → rule 2 skipped → falls to rule 3 → Deny
+        let no_proofs = vector[];
+        assert!(assembly_binding::is_deny(
+            &assembly_binding::resolve_role_with_conditions(&binding, gate_id, CHAR_B, TRIBE_X, &no_proofs),
+        ));
+
+        // CHAR_B in TRIBE_Y → doesn't match rule 1 or 2 → rule 3 → Deny
+        assert!(assembly_binding::is_deny(
+            &assembly_binding::resolve_role_with_conditions(&binding, gate_id, CHAR_B, TRIBE_Y, &proofs),
+        ));
+
+        destroy(binding);
+    }
+
+    #[test]
+    fun eval_context_accessors() {
+        let mut ctx = tx_context::dummy();
+        let binding = assembly_binding::new_binding(&mut ctx);
+        let gate_id = object::id_from_address(GATE_ADDR);
+
+        let eval_ctx = assembly_binding::build_eval_context(
+            &binding, gate_id, CHAR_A, TRIBE_X, @0xFACE,
+        );
+
+        assert!(assembly_binding::ctx_assembly_id(&eval_ctx) == gate_id);
+        assert!(assembly_binding::ctx_char_game_id(&eval_ctx) == CHAR_A);
+        assert!(assembly_binding::ctx_tribe_id(&eval_ctx) == TRIBE_X);
+        assert!(assembly_binding::ctx_char_address(&eval_ctx) == @0xFACE);
+        assert!(assembly_binding::ctx_binding_owner(&eval_ctx) == tx_context::sender(&ctx));
+
+        destroy(binding);
+    }
+
+    #[test]
+    fun blocklist_overrides_conditional_rules() {
+        let mut ctx = tx_context::dummy();
+        let gate_id = object::id_from_address(GATE_ADDR);
+        let condition_id = object::id_from_address(CONDITION_ADDR);
+        let mut binding = assembly_binding::new_binding(&mut ctx);
+        assembly_binding::register_gate(&mut binding, gate_id, &ctx);
+        assembly_binding::set_policy(&mut binding, gate_id, vector[
+            assembly_binding::conditional_rule(
+                assembly_binding::tribe(TRIBE_X),
+                assembly_binding::allow(),
+                condition_id,
+            ),
+        ], &ctx);
+        assembly_binding::add_to_blocklist(&mut binding, CHAR_A, &ctx);
+
+        let proofs = vector[assembly_binding::new_condition_proof(condition_id, true)];
+        let decision = assembly_binding::resolve_role_with_conditions(
+            &binding, gate_id, CHAR_A, TRIBE_X, &proofs,
+        );
+        // Blocklist wins even with passing condition
+        assert!(assembly_binding::is_deny(&decision));
+
+        destroy(binding);
+    }
+
+    #[test]
+    fun add_conditional_rule_works() {
+        let mut ctx = tx_context::dummy();
+        let gate_id = object::id_from_address(GATE_ADDR);
+        let condition_id = object::id_from_address(CONDITION_ADDR);
+        let mut binding = assembly_binding::new_binding(&mut ctx);
+        assembly_binding::register_gate(&mut binding, gate_id, &ctx);
+
+        assembly_binding::add_conditional_rule(
+            &mut binding, gate_id,
+            assembly_binding::everyone(), assembly_binding::allow(),
+            condition_id, &ctx,
+        );
+
+        // With proof → Allow
+        let proofs = vector[assembly_binding::new_condition_proof(condition_id, true)];
+        assert!(assembly_binding::is_allow(
+            &assembly_binding::resolve_role_with_conditions(&binding, gate_id, CHAR_A, TRIBE_X, &proofs),
+        ));
+
+        // Without proof → Default (no unconditional rules)
+        let no_proofs = vector[];
+        assert!(!assembly_binding::is_allow(
+            &assembly_binding::resolve_role_with_conditions(&binding, gate_id, CHAR_A, TRIBE_X, &no_proofs),
+        ));
+
+        destroy(binding);
+    }
 }

@@ -39,9 +39,31 @@ module ef_guard::assembly_binding {
     }
 
     /// A single access-control rule.
+    /// If `condition_id` is set, the rule only applies when a matching
+    /// `ConditionProof` with `passed = true` is provided.
     public struct Rule has copy, drop, store {
-        target: RuleTarget,
-        effect: RuleEffect,
+        target:       RuleTarget,
+        effect:       RuleEffect,
+        condition_id: Option<ID>,  // None = no extra condition required
+    }
+
+    // ── Condition system ─────────────────────────────────────────────────────
+
+    /// Context available to condition modules at evaluation time.
+    /// Built from data already in the transaction — no extra cost to the caller.
+    public struct EvalContext has copy, drop {
+        assembly_id:   ID,
+        char_game_id:  u64,
+        tribe_id:      u32,
+        char_address:  address,
+        binding_owner: address,
+    }
+
+    /// Proof that a condition was evaluated. Created by condition modules,
+    /// consumed by `resolve_role_with_conditions`.
+    public struct ConditionProof has drop {
+        condition_id: ID,
+        passed:       bool,
     }
 
     /// Per-assembly access policy: an ordered rule list.
@@ -233,7 +255,22 @@ module ef_guard::assembly_binding {
         assert_owner(binding, ctx);
         assert!(vec_map::contains(&binding.policies, &assembly_id), EAssemblyNotRegistered);
         let policy = vec_map::get_mut(&mut binding.policies, &assembly_id);
-        policy.rules.push_back(Rule { target, effect });
+        policy.rules.push_back(Rule { target, effect, condition_id: option::none() });
+    }
+
+    /// Append a conditional rule to an assembly's policy.
+    public fun add_conditional_rule(
+        binding:      &mut AssemblyBinding,
+        assembly_id:  ID,
+        target:       RuleTarget,
+        effect:       RuleEffect,
+        condition_id: ID,
+        ctx:          &TxContext,
+    ) {
+        assert_owner(binding, ctx);
+        assert!(vec_map::contains(&binding.policies, &assembly_id), EAssemblyNotRegistered);
+        let policy = vec_map::get_mut(&mut binding.policies, &assembly_id);
+        policy.rules.push_back(Rule { target, effect, condition_id: option::some(condition_id) });
     }
 
     /// Remove the rule at `index` from an assembly's policy.
@@ -253,41 +290,15 @@ module ef_guard::assembly_binding {
 
     /// Evaluate access for a character on any assembly type.
     /// Returns `Allow`, `Deny`, or `Default` (no policy / no match).
+    /// Rules with conditions are skipped (no proofs provided).
     public fun resolve_role(
         binding:      &AssemblyBinding,
         assembly_id:  ID,
         char_game_id: u64,
         tribe_id:     u32,
     ): AccessDecision {
-        // Blocklist always wins
-        if (security_status::is_blocklisted(&binding.threat_config, char_game_id)) {
-            return AccessDecision::Deny
-        };
-
-        if (!vec_map::contains(&binding.policies, &assembly_id)) {
-            return AccessDecision::Default
-        };
-
-        let policy = vec_map::get(&binding.policies, &assembly_id);
-        let len = policy.rules.length();
-        let mut i = 0;
-        while (i < len) {
-            let rule = &policy.rules[i];
-            let matches = match (&rule.target) {
-                RuleTarget::Everyone                     => true,
-                RuleTarget::Tribe     { tribe_id: t }    => *t == tribe_id,
-                RuleTarget::Character { char_game_id: c } => *c == char_game_id,
-            };
-            if (matches) {
-                return match (&rule.effect) {
-                    RuleEffect::Allow => AccessDecision::Allow,
-                    RuleEffect::Deny  => AccessDecision::Deny,
-                }
-            };
-            i = i + 1;
-        };
-
-        AccessDecision::Default // no rule matched
+        let empty_proofs = vector[];
+        resolve_role_with_conditions(binding, assembly_id, char_game_id, tribe_id, &empty_proofs)
     }
 
     // ── Threat config ────────────────────────────────────────────────────────
@@ -342,10 +353,116 @@ module ef_guard::assembly_binding {
     public fun character(char_game_id: u64): RuleTarget { RuleTarget::Character { char_game_id } }
     public fun allow(): RuleEffect                      { RuleEffect::Allow }
     public fun deny(): RuleEffect                       { RuleEffect::Deny }
-    public fun rule(target: RuleTarget, effect: RuleEffect): Rule { Rule { target, effect } }
+    public fun rule(target: RuleTarget, effect: RuleEffect): Rule {
+        Rule { target, effect, condition_id: option::none() }
+    }
+
+    /// Create a rule that also requires a condition to be met.
+    public fun conditional_rule(target: RuleTarget, effect: RuleEffect, condition_id: ID): Rule {
+        Rule { target, effect, condition_id: option::some(condition_id) }
+    }
 
     public fun is_allow(decision: &AccessDecision): bool  { *decision == AccessDecision::Allow }
     public fun is_deny(decision: &AccessDecision): bool   { *decision == AccessDecision::Deny }
+
+    // ── Condition system: constructors & resolution ────────────────────────────
+
+    /// Build an EvalContext from available data. Call this once per access check
+    /// and pass it to condition modules — they get full context for free.
+    public fun build_eval_context(
+        binding:      &AssemblyBinding,
+        assembly_id:  ID,
+        char_game_id: u64,
+        tribe_id:     u32,
+        char_address: address,
+    ): EvalContext {
+        EvalContext {
+            assembly_id,
+            char_game_id,
+            tribe_id,
+            char_address,
+            binding_owner: binding.owner,
+        }
+    }
+
+    /// Create a ConditionProof. Called by condition modules after evaluation.
+    /// `condition_id` must match the condition config's object ID.
+    public fun new_condition_proof(condition_id: ID, passed: bool): ConditionProof {
+        ConditionProof { condition_id, passed }
+    }
+
+    /// EvalContext accessors — condition modules read what they need.
+    public fun ctx_assembly_id(ctx: &EvalContext): ID        { ctx.assembly_id }
+    public fun ctx_char_game_id(ctx: &EvalContext): u64      { ctx.char_game_id }
+    public fun ctx_tribe_id(ctx: &EvalContext): u32          { ctx.tribe_id }
+    public fun ctx_char_address(ctx: &EvalContext): address   { ctx.char_address }
+    public fun ctx_binding_owner(ctx: &EvalContext): address  { ctx.binding_owner }
+
+    /// Evaluate access with condition proofs.
+    /// Same as `resolve_role` but also checks conditions on rules that require them.
+    /// Rules without conditions work exactly as before. Rules with conditions
+    /// only match if a ConditionProof with the matching ID and `passed = true` exists.
+    public fun resolve_role_with_conditions(
+        binding:          &AssemblyBinding,
+        assembly_id:      ID,
+        char_game_id:     u64,
+        tribe_id:         u32,
+        condition_proofs: &vector<ConditionProof>,
+    ): AccessDecision {
+        if (security_status::is_blocklisted(&binding.threat_config, char_game_id)) {
+            return AccessDecision::Deny
+        };
+
+        if (!vec_map::contains(&binding.policies, &assembly_id)) {
+            return AccessDecision::Default
+        };
+
+        let policy = vec_map::get(&binding.policies, &assembly_id);
+        let len = policy.rules.length();
+        let mut i = 0;
+        while (i < len) {
+            let rule = &policy.rules[i];
+            let target_matches = match (&rule.target) {
+                RuleTarget::Everyone                      => true,
+                RuleTarget::Tribe     { tribe_id: t }     => *t == tribe_id,
+                RuleTarget::Character { char_game_id: c } => *c == char_game_id,
+            };
+
+            if (target_matches) {
+                // Check condition if one is required
+                if (option::is_some(&rule.condition_id)) {
+                    let cid = *option::borrow(&rule.condition_id);
+                    if (!has_passing_proof(condition_proofs, cid)) {
+                        // Condition not met — skip this rule, try next
+                        i = i + 1;
+                        continue
+                    };
+                };
+                // Target matched + condition passed (or no condition)
+                return match (&rule.effect) {
+                    RuleEffect::Allow => AccessDecision::Allow,
+                    RuleEffect::Deny  => AccessDecision::Deny,
+                }
+            };
+            i = i + 1;
+        };
+
+        AccessDecision::Default
+    }
+
+    /// Check if a passing proof exists for a given condition ID.
+    fun has_passing_proof(proofs: &vector<ConditionProof>, condition_id: ID): bool {
+        let len = proofs.length();
+        let mut i = 0;
+        while (i < len) {
+            let proof = &proofs[i];
+            if (proof.condition_id == condition_id && proof.passed) {
+                return true
+            };
+            i = i + 1;
+        };
+        false
+    }
 
     // ── Internal helpers ─────────────────────────────────────────────────────
 
