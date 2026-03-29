@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.env
+.env.docker
+*.lock
+.pnpm-store/
+docker/.env.sui
+deployments/
+test-resources.json
+docker/world-contracts/
