@@ -1,12 +1,10 @@
 /**
  * Animated ASCII background for the in-game view.
- * Renders falling/drifting characters on a canvas, creating a
- * sci-fi atmosphere matching EVE Frontier's aesthetic.
+ * Falling characters shift color as they pass through random zones.
  */
 import { useEffect, useRef } from 'react'
 
 const CHARS = '01アイウエオカキクケコ░▒▓█◊◈⬡⬢⏣⎔'
-// Colors used inline in the draw loop
 
 interface Column {
   x: number
@@ -17,23 +15,45 @@ interface Column {
   fontSize: number
 }
 
+interface Zone {
+  x: number
+  y: number
+  w: number
+  h: number
+  // Color shift: 0=white, 1=bright orange, 2=dim orange, 3=cool blue
+  variant: number
+  life: number
+  maxLife: number
+}
+
+const ZONE_COLORS = [
+  // [r, g, b] for each variant
+  [220, 220, 230],   // white/cool
+  [255, 160, 40],    // bright warm orange
+  [140, 70, 10],     // dark amber
+  [60, 80, 120],     // cool blue-gray
+]
+
 export function AsciiBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     let animFrame: number
     let columns: Column[] = []
+    let zones: Zone[] = []
+    let tick = 0
 
     function resize() {
       canvas!.width = canvas!.offsetWidth
       canvas!.height = canvas!.offsetHeight
       initColumns()
+      zones = []
+      for (let i = 0; i < 4; i++) spawnZone()
     }
 
     function initColumns() {
@@ -51,8 +71,7 @@ export function AsciiBackground() {
         chars.push(CHARS[Math.floor(Math.random() * CHARS.length)])
       }
       return {
-        x,
-        y,
+        x, y,
         speed: 0.2 + Math.random() * 0.6,
         chars,
         opacity: 0.02 + Math.random() * 0.06,
@@ -60,24 +79,82 @@ export function AsciiBackground() {
       }
     }
 
+    function spawnZone() {
+      const w = 40 + Math.random() * 120
+      const h = 30 + Math.random() * 100
+      zones.push({
+        x: Math.random() * (canvas!.width - w),
+        y: Math.random() * (canvas!.height - h),
+        w, h,
+        variant: Math.floor(Math.random() * ZONE_COLORS.length),
+        life: 0,
+        maxLife: 300 + Math.random() * 600,
+      })
+    }
+
+    function getCharColor(cx: number, cy: number, baseAlpha: number): string {
+      // Default: orange
+      let r = 212, g = 113, b = 10
+      let zoneAlpha = 0
+
+      for (const zone of zones) {
+        if (cx >= zone.x && cx <= zone.x + zone.w && cy >= zone.y && cy <= zone.y + zone.h) {
+          // Fade zone in/out
+          const fadeIn = Math.min(zone.life / 60, 1)
+          const fadeOut = Math.min((zone.maxLife - zone.life) / 60, 1)
+          const zoneFade = Math.min(fadeIn, fadeOut)
+
+          if (zoneFade > zoneAlpha) {
+            const zc = ZONE_COLORS[zone.variant]
+            r = zc[0]
+            g = zc[1]
+            b = zc[2]
+            zoneAlpha = zoneFade
+          }
+        }
+      }
+
+      // Blend: if inside a zone, shift toward zone color
+      if (zoneAlpha > 0) {
+        const or = 212, og = 113, ob = 10
+        r = Math.round(or + (r - or) * zoneAlpha)
+        g = Math.round(og + (g - og) * zoneAlpha)
+        b = Math.round(ob + (b - ob) * zoneAlpha)
+      }
+
+      return `rgba(${r}, ${g}, ${b}, ${baseAlpha})`
+    }
+
     function draw() {
       ctx!.fillStyle = 'rgba(17, 19, 24, 0.15)'
       ctx!.fillRect(0, 0, canvas!.width, canvas!.height)
 
+      // Update zones
+      tick++
+      for (let i = zones.length - 1; i >= 0; i--) {
+        zones[i].life++
+        if (zones[i].life > zones[i].maxLife) {
+          zones.splice(i, 1)
+        }
+      }
+      // Spawn new zones occasionally
+      if (tick % 120 === 0 && zones.length < 6) {
+        spawnZone()
+      }
+
+      // Draw columns
       for (const col of columns) {
         for (let i = 0; i < col.chars.length; i++) {
           const charY = col.y + i * (col.fontSize + 2)
           if (charY < -20 || charY > canvas!.height + 20) continue
 
-          // Fade: brightest at the head (last char), dimmer further back
           const fadeRatio = i / col.chars.length
           const alpha = col.opacity * (0.3 + fadeRatio * 0.7)
 
           ctx!.font = `${col.fontSize}px monospace`
-          ctx!.fillStyle = `rgba(212, 113, 10, ${alpha})`
+          ctx!.fillStyle = getCharColor(col.x, charY, alpha)
           ctx!.fillText(col.chars[i], col.x, charY)
 
-          // Occasionally change a character
           if (Math.random() < 0.002) {
             col.chars[i] = CHARS[Math.floor(Math.random() * CHARS.length)]
           }
@@ -95,7 +172,6 @@ export function AsciiBackground() {
     }
 
     resize()
-    // Initial clear
     ctx.fillStyle = '#111318'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     draw()
