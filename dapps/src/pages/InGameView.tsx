@@ -221,7 +221,7 @@ export function InGameView({ itemId }: { itemId: string | null }) {
             Admin Panel
           </a>
         ) : <span />}
-        <span style={{ color: C.textMuted, fontSize: '9px', letterSpacing: '0.15em' }}>EF GUARD // ACCESS CONTROL MIDDLEWARE</span>
+        <img src="./logo-with-text.png" alt="ef guard" style={{ height: '16px', opacity: 0.4 }} />
       </div>
     </div>
   )
