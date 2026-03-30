@@ -49,7 +49,7 @@ export function Overview() {
   const { walletAddress, isConnected } = useConnection()
   const dAppKit = useDAppKit()
   const { data: owned } = useOwnedAssemblies(walletAddress)
-  const { groups } = useBuildingGroups(walletAddress)
+  const { groups, createGroup, addEntry: addBuildingEntry } = useBuildingGroups(walletAddress)
   const { rules, createRule } = useRules(walletAddress)
   const {
     policies, addGroupPolicy, removeGroupPolicy,
@@ -514,6 +514,8 @@ export function Overview() {
       {showGroupModal && (
         <CreateBuildingGroupModal
           onClose={() => setShowGroupModal(false)}
+          createGroup={createGroup}
+          addEntry={addBuildingEntry}
           onCreate={(groupId) => {
             addGroupPolicy(groupId)
             setShowGroupModal(false)

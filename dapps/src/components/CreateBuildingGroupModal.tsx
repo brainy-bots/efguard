@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import { useConnection } from '@evefrontier/dapp-kit'
-import { useBuildingGroups } from '../hooks/useBuildingGroups'
 import { useOwnedAssemblies, displayName } from '../hooks/useOwnedAssemblies'
-import type { AssemblyType } from '../types'
+import type { AssemblyType, BuildingGroupEntry } from '../types'
 
 export function CreateBuildingGroupModal({
   onClose,
   onCreate,
+  createGroup,
+  addEntry,
 }: {
   onClose: () => void
   onCreate: (groupId: string) => void
+  createGroup: (name: string) => string
+  addEntry: (groupId: string, entry: BuildingGroupEntry) => void
 }) {
   const { walletAddress } = useConnection()
-  const { createGroup, addEntry } = useBuildingGroups(walletAddress)
   const { data: owned } = useOwnedAssemblies(walletAddress)
   const [name, setName] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -31,7 +33,6 @@ export function CreateBuildingGroupModal({
     if (!trimmed) return
     const groupId = createGroup(trimmed)
 
-    // Add selected assemblies
     for (const assembly of owned?.assemblies ?? []) {
       if (selected.has(assembly.id)) {
         const type: AssemblyType = assembly.type === 'assembly' ? 'ssu' : assembly.type as AssemblyType
