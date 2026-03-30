@@ -62,6 +62,7 @@ export function Overview() {
   const [applying, setApplying] = useState<string | null>(null)
   const [bindingId, setBindingId] = useState('')
   const [bindingOwner, setBindingOwner] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [visitorTribeId, setVisitorTribeId] = useState<string>('')
   const [visitorCharId, setVisitorCharId] = useState<string>('')
 
@@ -76,7 +77,13 @@ export function Overview() {
   }
 
   function getRuleLabel(ruleId: string): string {
-    return getRule(ruleId)?.label ?? 'Unknown rule'
+    const rule = getRule(ruleId)
+    if (!rule) return 'Unknown rule'
+    const { target } = rule
+    if (target.type === 'tribe') return `Tribe: ${rule.label}`
+    if (target.type === 'character') return `Player: ${rule.label.replace(/^Character /, '')}`
+    if (target.type === 'everyone') return 'Everyone'
+    return rule.label
   }
 
   function getRuleTarget(ruleId: string): RuleTarget | null {
@@ -203,30 +210,43 @@ export function Overview() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white">Access Policies</h1>
-        <div className="flex items-center gap-2 text-xs">
-          <label className="text-default">Binding ID:</label>
-          <input
-            className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-64 text-xs focus:outline-none focus:border-accent"
-            placeholder="0x..."
-            value={bindingId}
-            onChange={(e) => setBindingId(e.target.value)}
-          />
-        </div>
-      </div>
+      <h1 className="text-xl font-bold text-white">Access Policies</h1>
 
-      {/* Owner field */}
-      <div className="flex items-center gap-2 text-xs">
-        <label className="text-default">Binding owner:</label>
-        <input
-          className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-64 text-xs focus:outline-none focus:border-accent"
-          placeholder="0x... (leave blank if you are the owner)"
-          value={bindingOwner}
-          onChange={(e) => setBindingOwner(e.target.value)}
-        />
-        {bindingOwner && !isOwner && (
-          <span className="text-yellow-400 text-[10px]">Read-only (visitor)</span>
+      {/* Advanced: Binding ID / Owner — collapsible */}
+      <div className="bg-surface-1 border border-surface-3 rounded-lg">
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="w-full flex items-center justify-between px-4 py-2 text-xs text-default hover:text-white transition-colors"
+        >
+          <span className="font-semibold uppercase tracking-wider">Advanced</span>
+          <span className="text-[10px]">{showAdvanced ? '\u25B2' : '\u25BC'}</span>
+        </button>
+
+        {showAdvanced && (
+          <div className="px-4 pb-4 border-t border-surface-3 pt-3 space-y-3">
+            <p className="text-[10px] text-default">These IDs link to your on-chain access control configuration.</p>
+            <div className="flex items-center gap-2 text-xs">
+              <label className="text-default">Binding ID:</label>
+              <input
+                className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-64 text-xs focus:outline-none focus:border-accent"
+                placeholder="0x..."
+                value={bindingId}
+                onChange={(e) => setBindingId(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <label className="text-default">Binding owner:</label>
+              <input
+                className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-64 text-xs focus:outline-none focus:border-accent"
+                placeholder="0x... (leave blank if you are the owner)"
+                value={bindingOwner}
+                onChange={(e) => setBindingOwner(e.target.value)}
+              />
+              {bindingOwner && !isOwner && (
+                <span className="text-yellow-400 text-[10px]">Read-only (visitor)</span>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -366,11 +386,11 @@ export function Overview() {
                     <span className={entry.enabled ? 'text-white' : 'text-default'}>
                       {getRuleLabel(entry.ruleId)}
                     </span>
-                    {/* Show condition object status */}
+                    {/* Condition warning — only shown as icon, no text */}
                     {(() => {
                       const rule = getRule(entry.ruleId)
                       if (!rule?.conditionObjectId) {
-                        return <span className="text-orange-400 text-[10px]" title="No condition object ID set">(no condition)</span>
+                        return <span className="text-orange-400 text-[10px]" title="Not yet linked on-chain — Apply will prompt you to create it">&#x26A0;</span>
                       }
                       return null
                     })()}

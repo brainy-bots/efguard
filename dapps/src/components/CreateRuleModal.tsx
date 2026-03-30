@@ -144,7 +144,7 @@ export function CreateRuleModal({
               autoFocus
             />
             <p className="text-[10px] text-default mt-1">
-              You can find a player's game ID on the Debug page by looking up their wallet address.
+              Find a player's game ID on their profile page or by looking up their wallet on the Debug page.
             </p>
           </div>
         )}

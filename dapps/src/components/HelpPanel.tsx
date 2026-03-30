@@ -16,29 +16,22 @@ export function HelpPanel() {
       {open && (
         <div className="px-4 pb-4 text-xs text-default space-y-3 border-t border-surface-3 pt-3">
           <div>
-            <h3 className="text-white font-semibold mb-1">Evaluation order</h3>
-            <p>Rules are evaluated top-to-bottom. The first matching rule wins. Drag rules to reorder priority.</p>
+            <h3 className="text-white font-semibold mb-1">How rules work</h3>
+            <p>Rules are checked from top to bottom. The first matching rule decides. Drag to reorder.</p>
           </div>
 
           <div>
-            <h3 className="text-white font-semibold mb-1">Effects by building type</h3>
+            <h3 className="text-white font-semibold mb-1">Building types</h3>
             <ul className="space-y-1 ml-3 list-disc">
-              <li><span className="text-white">Gates / SSUs:</span> Allow = can use, Deny = blocked</li>
-              <li><span className="text-white">Turrets:</span> Allow = friendly (won't shoot), Deny = hostile (will shoot)</li>
+              <li><span className="text-white">Gates:</span> Controls who can jump through your gates</li>
+              <li><span className="text-white">Turrets:</span> Controls who your turrets target &mdash; allowed players won't be shot</li>
+              <li><span className="text-white">Smart Storage:</span> Controls who can deposit or withdraw items from your storage</li>
             </ul>
           </div>
 
           <div>
             <h3 className="text-white font-semibold mb-1">Blocklist</h3>
-            <p>Characters on the blocklist are always denied, regardless of rules. Blocklist overrides all rules.</p>
-          </div>
-
-          <div>
-            <h3 className="text-white font-semibold mb-1">Conditions</h3>
-            <p>
-              Each rule references a condition object on-chain. Conditions are pluggable:
-              tribe membership, specific character, everyone, and more (NFT, balance, etc.) in future updates.
-            </p>
+            <p>Blocklisted players are always denied, regardless of rules.</p>
           </div>
         </div>
       )}
