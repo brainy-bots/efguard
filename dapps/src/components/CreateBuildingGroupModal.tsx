@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useConnection } from '@evefrontier/dapp-kit'
 import { useOwnedAssemblies, displayName } from '../hooks/useOwnedAssemblies'
 import type { AssemblyType, BuildingGroupEntry } from '../types'
+import { theme, S } from '../lib/theme'
 
 export function CreateBuildingGroupModal({
   onClose,
@@ -44,12 +45,12 @@ export function CreateBuildingGroupModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-1 border border-surface-3 rounded-lg p-6 w-[500px] max-h-[80vh] overflow-y-auto space-y-4" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-sm font-semibold text-white">Create Building Group</h2>
+    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={onClose}>
+      <div className="p-6 w-[500px] max-h-[80vh] overflow-y-auto space-y-4" style={S.panel} onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-sm font-semibold" style={{ color: theme.textPrimary }}>Create Building Group</h2>
 
         <input
-          className="w-full bg-surface-2 border border-surface-3 rounded px-3 py-1.5 text-sm text-white placeholder:text-default focus:outline-none focus:border-accent"
+          style={S.input}
           placeholder="Group name (e.g. Alpha Sector Gates)"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -59,17 +60,17 @@ export function CreateBuildingGroupModal({
         {owned && owned.assemblies.length > 0 && (
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-default">Select buildings</label>
+              <label className="text-xs" style={{ color: theme.textSecondary }}>Select buildings</label>
               <div className="flex gap-2 text-xs">
                 <button
                   onClick={() => setSelected(new Set(owned.assemblies.map((a) => a.id)))}
-                  className="text-accent hover:underline"
+                  style={{ color: theme.orange, background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                   All
                 </button>
                 <button
                   onClick={() => setSelected(new Set())}
-                  className="text-default hover:text-white"
+                  style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                   None
                 </button>
@@ -77,18 +78,23 @@ export function CreateBuildingGroupModal({
             </div>
             <div className="space-y-1 max-h-60 overflow-y-auto">
               {owned.assemblies.map((a) => (
-                <label key={a.id} className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-surface-2 cursor-pointer" title={a.id}>
+                <label
+                  key={a.id}
+                  className="flex items-center gap-2 text-xs py-1 px-2 cursor-pointer"
+                  style={{ color: theme.textPrimary }}
+                  title={a.id}
+                >
                   <input
                     type="checkbox"
                     checked={selected.has(a.id)}
                     onChange={() => toggle(a.id)}
-                    className="accent-accent"
                   />
-                  <span className="text-white">{displayName(a)}</span>
+                  <span>{displayName(a)}</span>
                   {a.details?.status && (
-                    <span className={`text-[10px] uppercase font-semibold ml-auto ${
-                      a.details.status === 'ONLINE' ? 'text-green-400' : 'text-red-400'
-                    }`}>
+                    <span
+                      className="text-[10px] uppercase font-semibold ml-auto"
+                      style={{ color: a.details.status === 'ONLINE' ? theme.green : theme.red }}
+                    >
                       {a.details.status}
                     </span>
                   )}
@@ -99,13 +105,18 @@ export function CreateBuildingGroupModal({
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-3 py-1.5 text-xs text-default hover:text-white">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs"
+            style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
+          >
             Cancel
           </button>
           <button
             onClick={handleCreate}
             disabled={!name.trim()}
-            className="px-4 py-1.5 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-50"
+            className="disabled:opacity-50"
+            style={S.btn}
           >
             Create ({selected.size} buildings)
           </button>

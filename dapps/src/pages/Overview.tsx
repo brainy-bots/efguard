@@ -10,6 +10,7 @@ import type { RuleTarget, RuleEffect } from '../types'
 import { CreateRuleModal } from '../components/CreateRuleModal'
 import { CreateBuildingGroupModal } from '../components/CreateBuildingGroupModal'
 import { HelpPanel } from '../components/HelpPanel'
+import { theme, S } from '../lib/theme'
 
 // ── Visitor access evaluation (client-side preview) ─────────────────────────
 
@@ -78,24 +79,24 @@ export function Overview() {
 
   function RuleLabel({ ruleId }: { ruleId: string }) {
     const rule = getRule(ruleId)
-    if (!rule) return <span className="text-default">Unknown rule</span>
+    if (!rule) return <span style={{ color: theme.textSecondary }}>Unknown rule</span>
     const { target } = rule
 
     const typeColors: Record<string, string> = {
-      tribe: 'text-blue-400',
-      character: 'text-purple-400',
-      everyone: 'text-yellow-400',
+      tribe: '#60a5fa',
+      character: '#c084fc',
+      everyone: '#facc15',
     }
     const typeLabels: Record<string, string> = {
       tribe: 'Tribe',
       character: 'Player',
       everyone: 'Everyone',
     }
-    const color = typeColors[target.type] ?? 'text-default'
+    const color = typeColors[target.type] ?? theme.textSecondary
     const typeLabel = typeLabels[target.type] ?? target.type
 
     if (target.type === 'everyone') {
-      return <span className={color}>{typeLabel}</span>
+      return <span style={{ color }}>{typeLabel}</span>
     }
 
     const nameLabel = target.type === 'character'
@@ -104,7 +105,7 @@ export function Overview() {
 
     return (
       <span>
-        <span className={`${color} text-[10px] uppercase font-semibold mr-1.5`}>{typeLabel}</span>
+        <span className="text-[10px] uppercase font-semibold mr-1.5" style={{ color }}>{typeLabel}</span>
         <span>{nameLabel}</span>
       </span>
     )
@@ -214,8 +215,8 @@ export function Overview() {
   if (!isConnected) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
-        <h1 className="text-xl font-bold text-white mb-4">ef_guard</h1>
-        <p className="text-default">Connect your wallet to manage access policies.</p>
+        <h1 className="text-xl font-bold mb-4" style={{ color: theme.textPrimary }}>ef_guard</h1>
+        <p style={{ color: theme.textSecondary }}>Connect your wallet to manage access policies.</p>
       </div>
     )
   }
@@ -230,40 +231,43 @@ export function Overview() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <h1 className="text-xl font-bold text-white">Access Policies</h1>
+      <h1 className="text-xl font-bold" style={{ color: theme.textPrimary }}>Access Policies</h1>
 
       {/* Advanced: Binding ID / Owner — collapsible */}
-      <div className="bg-surface-1 border border-surface-3 rounded-lg">
+      <div style={S.panel}>
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="w-full flex items-center justify-between px-4 py-2 text-xs text-default hover:text-white transition-colors"
+          className="w-full flex items-center justify-between px-4 py-2 text-xs transition-colors"
+          style={{ color: theme.textSecondary }}
         >
           <span className="font-semibold uppercase tracking-wider">Advanced</span>
           <span className="text-[10px]">{showAdvanced ? '\u25B2' : '\u25BC'}</span>
         </button>
 
         {showAdvanced && (
-          <div className="px-4 pb-4 border-t border-surface-3 pt-3 space-y-3">
-            <p className="text-[10px] text-default">These IDs link to your on-chain access control configuration.</p>
+          <div className="px-4 pb-4 pt-3 space-y-3" style={{ borderTop: `1px solid ${theme.border}` }}>
+            <p className="text-[10px]" style={{ color: theme.textSecondary }}>These IDs link to your on-chain access control configuration.</p>
             <div className="flex items-center gap-2 text-xs">
-              <label className="text-default">Binding ID:</label>
+              <label style={{ color: theme.textSecondary }}>Binding ID:</label>
               <input
-                className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-64 text-xs focus:outline-none focus:border-accent"
+                className="font-mono w-64"
+                style={S.input}
                 placeholder="0x..."
                 value={bindingId}
                 onChange={(e) => setBindingId(e.target.value)}
               />
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <label className="text-default">Binding owner:</label>
+              <label style={{ color: theme.textSecondary }}>Binding owner:</label>
               <input
-                className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-64 text-xs focus:outline-none focus:border-accent"
+                className="font-mono w-64"
+                style={S.input}
                 placeholder="0x... (leave blank if you are the owner)"
                 value={bindingOwner}
                 onChange={(e) => setBindingOwner(e.target.value)}
               />
               {bindingOwner && !isOwner && (
-                <span className="text-yellow-400 text-[10px]">Read-only (visitor)</span>
+                <span className="text-[10px]" style={{ color: '#facc15' }}>Read-only (visitor)</span>
               )}
             </div>
           </div>
@@ -272,19 +276,21 @@ export function Overview() {
 
       {/* Visitor access check (shown when not owner) */}
       {!isOwner && (
-        <div className="bg-surface-1 border border-surface-3 rounded-lg p-4 space-y-3">
-          <h2 className="text-xs font-semibold text-default uppercase tracking-wider">Check your access</h2>
+        <div className="p-4 space-y-3" style={S.panel}>
+          <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textSecondary }}>Check your access</h2>
           <div className="flex items-center gap-3 text-xs">
-            <label className="text-default">Your tribe ID:</label>
+            <label style={{ color: theme.textSecondary }}>Your tribe ID:</label>
             <input
-              className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-32 text-xs focus:outline-none focus:border-accent"
+              className="font-mono w-32"
+              style={S.input}
               placeholder="e.g. 42"
               value={visitorTribeId}
               onChange={(e) => setVisitorTribeId(e.target.value)}
             />
-            <label className="text-default">Your char game ID:</label>
+            <label style={{ color: theme.textSecondary }}>Your char game ID:</label>
             <input
-              className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-40 text-xs focus:outline-none focus:border-accent"
+              className="font-mono w-40"
+              style={S.input}
               placeholder="e.g. 123456"
               value={visitorCharId}
               onChange={(e) => setVisitorCharId(e.target.value)}
@@ -305,20 +311,22 @@ export function Overview() {
 
                 return (
                   <div key={policy.buildingGroupId} className="flex items-center gap-3 text-xs">
-                    <span className="text-white">{groupName}:</span>
+                    <span style={{ color: theme.textPrimary }}>{groupName}:</span>
                     {result ? (
                       <>
-                        <span className={`px-2 py-0.5 rounded font-semibold text-[10px] uppercase ${
-                          result.effect === 'Allow'
-                            ? 'bg-green-900/50 text-green-400'
-                            : 'bg-red-900/50 text-red-400'
-                        }`}>
+                        <span
+                          className="px-2 py-0.5 font-semibold text-[10px] uppercase"
+                          style={{
+                            background: result.effect === 'Allow' ? 'rgba(68,184,64,0.2)' : 'rgba(200,48,48,0.2)',
+                            color: result.effect === 'Allow' ? theme.green : theme.red,
+                          }}
+                        >
                           {result.effect === 'Allow' ? 'Allowed' : 'Denied'}
                         </span>
-                        <span className="text-default">matched: {result.matchedRuleLabel}</span>
+                        <span style={{ color: theme.textSecondary }}>matched: {result.matchedRuleLabel}</span>
                       </>
                     ) : (
-                      <span className="text-default">No matching rule (default deny)</span>
+                      <span style={{ color: theme.textSecondary }}>No matching rule (default deny)</span>
                     )}
                   </div>
                 )
@@ -340,28 +348,32 @@ export function Overview() {
         const isApplying = applying === policy.buildingGroupId
 
         return (
-          <div key={policy.buildingGroupId} className="bg-surface-1 border border-surface-3 rounded-lg">
+          <div key={policy.buildingGroupId} style={S.panel}>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-surface-3">
+            <div style={S.header} className="flex items-center justify-between px-4 py-3">
               <div>
-                <h2 className="text-sm font-semibold text-white">{groupName}</h2>
-                <p className="text-xs text-default">{assemblyCount} building{assemblyCount !== 1 ? 's' : ''}</p>
+                <h2 className="text-sm font-semibold" style={{ color: theme.textPrimary }}>{groupName}</h2>
+                <p className="text-xs" style={{ color: theme.textSecondary }}>{assemblyCount} building{assemblyCount !== 1 ? 's' : ''}</p>
               </div>
               {isOwner && (
                 <div className="flex items-center gap-2">
                   {policy.dirty && (
-                    <span className="text-xs text-yellow-400">unsaved</span>
+                    <span className="text-xs" style={{ color: '#facc15' }}>unsaved</span>
                   )}
                   <button
                     onClick={() => handleApply(policy.buildingGroupId)}
                     disabled={!policy.dirty || isApplying || !bindingId.trim()}
-                    className="px-3 py-1 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-30"
+                    className="disabled:opacity-30"
+                    style={S.btn}
                   >
                     {isApplying ? 'Applying...' : 'Apply'}
                   </button>
                   <button
                     onClick={() => removeGroupPolicy(policy.buildingGroupId)}
-                    className="text-xs text-default hover:text-red-400"
+                    className="text-xs"
+                    style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = theme.red }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = theme.textSecondary }}
                   >
                     Remove
                   </button>
@@ -372,7 +384,7 @@ export function Overview() {
             {/* Rule entries */}
             <div className="p-4 space-y-1">
               {sorted.length === 0 && (
-                <p className="text-xs text-default">No rules. {isOwner ? 'Add one below.' : ''}</p>
+                <p className="text-xs" style={{ color: theme.textSecondary }}>No rules. {isOwner ? 'Add one below.' : ''}</p>
               )}
 
               {sorted.map((entry, i) => (
@@ -383,28 +395,29 @@ export function Overview() {
                   onDragEnter={() => handleDragEnter(entry.id)}
                   onDragEnd={() => handleDragEnd(policy.buildingGroupId)}
                   onDragOver={(e) => e.preventDefault()}
-                  className={`flex items-center gap-3 px-3 py-2 rounded text-xs transition-colors ${
-                    entry.enabled
-                      ? 'bg-surface-2 hover:bg-surface-3'
-                      : 'bg-surface-2/40 opacity-50'
-                  }`}
+                  className="flex items-center gap-3 text-xs"
+                  style={{
+                    ...S.row,
+                    opacity: entry.enabled ? 1 : 0.5,
+                    background: entry.enabled ? 'rgba(30,35,44,0.5)' : 'transparent',
+                  }}
                 >
                   {/* Drag handle (owner only) */}
-                  {isOwner && <span className="cursor-grab text-default select-none">&#x2807;</span>}
+                  {isOwner && <span className="cursor-grab select-none" style={{ color: theme.textSecondary }}>&#x2807;</span>}
 
                   {/* Priority number */}
-                  <span className="text-default w-4 text-center">{i + 1}</span>
+                  <span className="w-4 text-center" style={{ color: theme.textSecondary }}>{i + 1}</span>
 
                   {/* Rule label */}
                   <span className={`flex-1 flex items-center gap-2 ${entry.enabled ? '' : 'line-through opacity-50'}`}>
-                    <span className={entry.enabled ? 'text-white' : 'text-default'}>
+                    <span style={{ color: entry.enabled ? theme.textPrimary : theme.textSecondary }}>
                       <RuleLabel ruleId={entry.ruleId} />
                     </span>
-                    {/* Condition warning — only shown as icon, no text */}
+                    {/* Condition warning */}
                     {(() => {
                       const rule = getRule(entry.ruleId)
                       if (!rule?.conditionObjectId) {
-                        return <span className="text-orange-400 text-[10px]" title="Not yet linked on-chain — Apply will prompt you to create it">&#x26A0;</span>
+                        return <span className="text-[10px]" style={{ color: theme.orange }} title="Not yet linked on-chain — Apply will prompt you to create it">&#x26A0;</span>
                       }
                       return null
                     })()}
@@ -418,20 +431,24 @@ export function Overview() {
                         entry.id,
                         entry.effect === 'Allow' ? 'Deny' : 'Allow',
                       )}
-                      className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                        entry.effect === 'Allow'
-                          ? 'bg-green-900/50 text-green-400 hover:bg-green-900'
-                          : 'bg-red-900/50 text-red-400 hover:bg-red-900'
-                      }`}
+                      className="px-2 py-0.5 font-semibold text-[10px] uppercase"
+                      style={{
+                        background: entry.effect === 'Allow' ? 'rgba(68,184,64,0.2)' : 'rgba(200,48,48,0.2)',
+                        color: entry.effect === 'Allow' ? theme.green : theme.red,
+                        border: 'none',
+                        cursor: 'pointer',
+                      }}
                     >
                       {entry.effect}
                     </button>
                   ) : (
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                      entry.effect === 'Allow'
-                        ? 'bg-green-900/50 text-green-400'
-                        : 'bg-red-900/50 text-red-400'
-                    }`}>
+                    <span
+                      className="px-2 py-0.5 font-semibold text-[10px] uppercase"
+                      style={{
+                        background: entry.effect === 'Allow' ? 'rgba(68,184,64,0.2)' : 'rgba(200,48,48,0.2)',
+                        color: entry.effect === 'Allow' ? theme.green : theme.red,
+                      }}
+                    >
                       {entry.effect}
                     </span>
                   )}
@@ -440,8 +457,10 @@ export function Overview() {
                   {isOwner && (
                     <button
                       onClick={() => toggleEntry(policy.buildingGroupId, entry.id)}
-                      className="text-default hover:text-white"
                       title={entry.enabled ? 'Disable' : 'Enable'}
+                      style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = theme.textPrimary }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = theme.textSecondary }}
                     >
                       {entry.enabled ? '\u25CF' : '\u25CB'}
                     </button>
@@ -451,7 +470,9 @@ export function Overview() {
                   {isOwner && (
                     <button
                       onClick={() => removeEntry(policy.buildingGroupId, entry.id)}
-                      className="text-default hover:text-red-400"
+                      style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = theme.red }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = theme.textSecondary }}
                     >
                       Remove
                     </button>
@@ -463,7 +484,8 @@ export function Overview() {
               {isOwner && (
                 <div className="flex items-center gap-2 pt-2">
                   <select
-                    className="flex-1 bg-surface-2 border border-surface-3 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent"
+                    className="flex-1"
+                    style={S.select}
                     defaultValue=""
                     onChange={(e) => {
                       if (e.target.value === '__new__') {
@@ -494,7 +516,8 @@ export function Overview() {
       {isOwner && (
         <div className="flex items-center gap-2">
           <select
-            className="flex-1 bg-surface-1 border border-surface-3 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-accent"
+            className="flex-1"
+            style={S.select}
             defaultValue=""
             onChange={(e) => {
               if (e.target.value === '__new__') {
@@ -516,18 +539,21 @@ export function Overview() {
 
       {/* Unassigned buildings */}
       {owned && owned.assemblies.length > 0 && (
-        <div className="bg-surface-1 border border-surface-3 rounded-lg p-4">
-          <h2 className="text-xs font-semibold text-default uppercase tracking-wider mb-2">
+        <div className="p-4" style={S.panel}>
+          <h2 style={S.header} className="mb-2">
             All Buildings ({owned.assemblies.length})
           </h2>
           <div className="space-y-1">
             {owned.assemblies.map((a) => (
               <div key={a.id} className="flex items-center justify-between text-xs py-1" title={a.id}>
-                <span className="text-white">{displayName(a)}</span>
-                <span className={`text-[10px] uppercase font-semibold ${
-                  a.details?.status === 'ONLINE' ? 'text-green-400' :
-                  a.details?.status === 'OFFLINE' ? 'text-red-400' : 'text-default'
-                }`}>
+                <span style={{ color: theme.textPrimary }}>{displayName(a)}</span>
+                <span
+                  className="text-[10px] uppercase font-semibold"
+                  style={{
+                    color: a.details?.status === 'ONLINE' ? theme.green :
+                      a.details?.status === 'OFFLINE' ? theme.red : theme.textSecondary,
+                  }}
+                >
                   {a.details?.status ?? '?'}
                 </span>
               </div>
@@ -538,17 +564,23 @@ export function Overview() {
 
       {/* Saved Rules management */}
       {isOwner && rules.length > 0 && (
-        <details className="bg-surface-1 border border-surface-3 rounded-lg">
-          <summary className="px-4 py-3 text-xs font-semibold text-default uppercase tracking-wider cursor-pointer hover:text-white">
+        <details style={S.panel}>
+          <summary
+            className="px-4 py-3 text-xs font-semibold uppercase tracking-wider cursor-pointer"
+            style={{ color: theme.textSecondary }}
+          >
             Saved Rules ({rules.length})
           </summary>
           <div className="px-4 pb-3 space-y-1">
             {rules.map((r) => (
               <div key={r.id} className="flex items-center justify-between text-xs py-1">
-                <span className="text-white">{r.label}</span>
+                <span style={{ color: theme.textPrimary }}>{r.label}</span>
                 <button
                   onClick={() => deleteRule(r.id)}
-                  className="text-default hover:text-red-400 text-[10px]"
+                  className="text-[10px]"
+                  style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = theme.red }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = theme.textSecondary }}
                 >
                   Delete
                 </button>

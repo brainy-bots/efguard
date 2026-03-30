@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useConnection, executeGraphQLQuery, getOwnedObjectsByType } from '@evefrontier/dapp-kit'
 import { WORLD_PKG } from '../env'
+import { theme, S } from '../lib/theme'
 
 interface DebugState {
   walletAddress: string | null
@@ -99,12 +100,12 @@ export function Debug() {
   }, [walletAddress, isConnected])
 
   if (!isConnected) {
-    return <div className="p-6 text-default">Connect wallet to see debug info.</div>
+    return <div className="p-6" style={{ color: theme.textSecondary }}>Connect wallet to see debug info.</div>
   }
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-4">
-      <h1 className="text-xl font-bold">Debug: Chain Data</h1>
+      <h1 className="text-xl font-bold" style={{ color: theme.textPrimary }}>Debug: Chain Data</h1>
 
       <Section title="Wallet">
         <KV label="Address" value={state.walletAddress} />
@@ -123,21 +124,25 @@ export function Debug() {
       {state.errors.length > 0 && (
         <Section title="Errors">
           {state.errors.map((e, i) => (
-            <div key={i} className="text-red-400 text-sm font-mono break-all">{e}</div>
+            <div key={i} className="text-sm font-mono break-all" style={{ color: theme.red }}>{e}</div>
           ))}
         </Section>
       )}
 
       <Section title={`Objects owned by Character (${state.ownedObjects.length})`}>
-        {state.loading && <div className="text-default">Loading...</div>}
+        {state.loading && <div style={{ color: theme.textSecondary }}>Loading...</div>}
         {state.ownedObjects.map((obj) => (
-          <details key={obj.address} className="border border-surface-2 rounded p-2 mb-2">
+          <details
+            key={obj.address}
+            className="p-2 mb-2"
+            style={{ border: `1px solid ${theme.border}` }}
+          >
             <summary className="text-sm font-mono cursor-pointer">
-              <span className="text-accent">{shortType(obj.type)}</span>
+              <span style={{ color: theme.orange }}>{shortType(obj.type)}</span>
               {' — '}
-              <span className="text-surface-3">{obj.address}</span>
+              <span style={{ color: theme.textMuted }}>{obj.address}</span>
             </summary>
-            <pre className="text-xs text-surface-3 mt-2 overflow-x-auto whitespace-pre-wrap">
+            <pre className="text-xs mt-2 overflow-x-auto whitespace-pre-wrap" style={{ color: theme.textMuted }}>
               {JSON.stringify(obj.json, null, 2)}
             </pre>
           </details>
@@ -149,8 +154,8 @@ export function Debug() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="border border-surface-2 rounded p-4">
-      <h2 className="text-sm font-semibold text-accent mb-2">{title}</h2>
+    <div className="p-4" style={{ ...S.panel }}>
+      <h2 className="text-sm font-semibold mb-2" style={{ color: theme.orange }}>{title}</h2>
       {children}
     </div>
   )
@@ -159,8 +164,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function KV({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="text-sm mb-1">
-      <span className="text-default">{label}: </span>
-      <span className="font-mono text-surface-3 break-all">{value ?? '—'}</span>
+      <span style={{ color: theme.textSecondary }}>{label}: </span>
+      <span className="font-mono break-all" style={{ color: theme.textMuted }}>{value ?? '—'}</span>
     </div>
   )
 }

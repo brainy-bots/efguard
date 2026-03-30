@@ -4,8 +4,9 @@ import { useConnection, executeGraphQLQuery } from '@evefrontier/dapp-kit'
 import { useDAppKit } from '@mysten/dapp-kit-react'
 import { Transaction } from '@mysten/sui/transactions'
 import { useOwnedAssemblies, displayName, type OwnedAssembly } from '../hooks/useOwnedAssemblies'
-import { STATUS_COLORS, type AssemblyType } from '../types'
+import type { AssemblyType } from '../types'
 import { EFGUARD_PKG, WORLD_PKG } from '../env'
+import { theme, S } from '../lib/theme'
 
 const TYPE_LABELS: Record<string, string> = {
   gate: 'Gate', turret: 'Turret', ssu: 'Smart Storage', assembly: 'Assembly', unknown: 'Unknown',
@@ -18,7 +19,6 @@ function supportsExtension(a: OwnedAssembly): boolean {
 }
 
 function hasEfGuardExtension(a: OwnedAssembly): boolean {
-  // Check if the extension type contains our package ID
   const ext = a.details?.extension
   if (!ext) return false
   return typeof ext === 'string' && ext.includes(EFGUARD_PKG)
@@ -49,7 +49,6 @@ export function Buildings() {
     const charId = owned.characterId
     const assemblyType = assembly.type === 'assembly' ? 'ssu' : assembly.type as AssemblyType
 
-    // We need the OwnerCap details (version + digest) for receivingRef
     const capDetail = await executeGraphQLQuery<{
       object: { version: number; digest: string }
     }>(
@@ -77,7 +76,6 @@ export function Buildings() {
         ssu: `${WORLD_PKG}::storage_unit::StorageUnit`,
       }
 
-      // Borrow OwnerCap from Character
       const [cap, receipt] = tx.moveCall({
         target: `${WORLD_PKG}::character::borrow_owner_cap`,
         typeArguments: [worldTypeMap[assemblyType]],
@@ -91,7 +89,6 @@ export function Buildings() {
         ],
       })
 
-      // Authorize ef_guard extension
       if (assemblyType === 'gate') {
         const [config] = tx.moveCall({
           target: `${EFGUARD_PKG}::gate_extension::authorize_on_gate`,
@@ -121,7 +118,6 @@ export function Buildings() {
         })
       }
 
-      // Set DApp URL on the assembly metadata
       const updateUrlTarget = assemblyType === 'gate'
         ? `${WORLD_PKG}::gate::update_metadata_url`
         : assemblyType === 'turret'
@@ -133,7 +129,6 @@ export function Buildings() {
         arguments: [tx.object(assembly.id), cap, tx.pure.string(DAPP_URL)],
       })
 
-      // Return OwnerCap
       tx.moveCall({
         target: `${WORLD_PKG}::character::return_owner_cap`,
         typeArguments: [worldTypeMap[assemblyType]],
@@ -143,7 +138,6 @@ export function Buildings() {
       await dAppKit.signAndExecuteTransaction({ transaction: tx })
 
       setResult({ id: assembly.id, ok: true, msg: 'ef_guard installed!' })
-      // Re-fetch assembly data to reflect the new extension status
       await qc.invalidateQueries({ queryKey: ['owned-assemblies'] })
     } catch (err) {
       setResult({ id: assembly.id, ok: false, msg: err instanceof Error ? err.message : String(err) })
@@ -155,77 +149,78 @@ export function Buildings() {
   if (!isConnected) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
-        <h1 className="text-xl font-bold text-white mb-4">Buildings</h1>
-        <p className="text-default text-sm">Connect your wallet to see your buildings.</p>
+        <h1 className="text-xl font-bold mb-4" style={{ color: theme.textPrimary }}>Buildings</h1>
+        <p className="text-sm" style={{ color: theme.textSecondary }}>Connect your wallet to see your buildings.</p>
       </div>
     )
   }
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-xl font-bold text-white mb-4">Buildings</h1>
+      <h1 className="text-xl font-bold mb-4" style={{ color: theme.textPrimary }}>Buildings</h1>
 
-      {isLoading && <p className="text-default text-sm animate-pulse">Loading buildings...</p>}
+      {isLoading && <p className="text-sm animate-pulse" style={{ color: theme.textSecondary }}>Loading buildings...</p>}
 
       {owned && owned.assemblies.length === 0 && !isLoading && (
-        <p className="text-default text-sm">No buildings found for your character.</p>
+        <p className="text-sm" style={{ color: theme.textSecondary }}>No buildings found for your character.</p>
       )}
 
       {owned && owned.assemblies.length > 0 && (
         <>
-          <p className="text-xs text-default mb-3">
+          <p className="text-xs mb-3" style={{ color: theme.textSecondary }}>
             {owned.assemblies.length} building{owned.assemblies.length !== 1 ? 's' : ''} owned by character {owned.characterId?.slice(0, 10)}…
           </p>
           <div className="space-y-2">
             {owned.assemblies.map((a) => {
               const d = a.details
-              const statusColor = STATUS_COLORS[d?.status ?? ''] ?? 'text-default'
+              const statusColor = d?.status === 'ONLINE' ? theme.green : d?.status === 'OFFLINE' ? theme.red : theme.textSecondary
               const isInstalling = installing === a.id
               const thisResult = result?.id === a.id ? result : null
 
               return (
-                <div key={a.id} className="bg-surface-1 border border-surface-3 rounded-lg p-4" title={a.id}>
+                <div key={a.id} className="p-4" style={S.panel} title={a.id}>
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-white font-medium text-sm">{displayName(a)}</span>
-                        <span className="text-default text-[10px]">{d?.typeName || TYPE_LABELS[a.type]}</span>
-                        <span className={`${statusColor} uppercase text-[10px] font-semibold`}>
+                        <span className="font-medium text-sm" style={{ color: theme.textPrimary }}>{displayName(a)}</span>
+                        <span className="text-[10px]" style={{ color: theme.textSecondary }}>{d?.typeName || TYPE_LABELS[a.type]}</span>
+                        <span className="uppercase text-[10px] font-semibold" style={{ color: statusColor }}>
                           {d?.status ?? '?'}
                         </span>
                       </div>
                       {d?.description && (
-                        <p className="text-default text-[10px] mt-0.5">{d.description}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: theme.textSecondary }}>{d.description}</p>
                       )}
                       {d?.dappUrl && (
-                        <p className="text-[10px] text-surface-3 mt-0.5">DApp: {d.dappUrl}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: theme.textMuted }}>DApp: {d.dappUrl}</p>
                       )}
                     </div>
 
                     <div className="flex items-center gap-2">
                       {hasEfGuardExtension(a) && (
-                        <span className="text-green-400 text-[10px] font-semibold">ef_guard active</span>
+                        <span className="text-[10px] font-semibold" style={{ color: theme.green }}>ef_guard active</span>
                       )}
                       {hasOtherExtension(a) && (
-                        <span className="text-yellow-400 text-[10px] font-semibold">Other extension</span>
+                        <span className="text-[10px] font-semibold" style={{ color: '#eab308' }}>Other extension</span>
                       )}
                       {supportsExtension(a) && (
                         <button
                           onClick={() => handleInstall(a)}
                           disabled={isInstalling}
-                          className="px-3 py-1.5 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-50"
+                          className="disabled:opacity-50"
+                          style={S.btn}
                         >
                           {isInstalling ? 'Installing...' : hasEfGuardExtension(a) ? 'Reinstall' : hasOtherExtension(a) ? 'Replace with ef_guard' : 'Install ef_guard'}
                         </button>
                       )}
                       {a.type === 'assembly' && (
-                        <span className="text-default text-[10px]">No extension support yet</span>
+                        <span className="text-[10px]" style={{ color: theme.textSecondary }}>No extension support yet</span>
                       )}
                     </div>
                   </div>
 
                   {thisResult && (
-                    <div className={`mt-2 text-xs ${thisResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className="mt-2 text-xs" style={{ color: thisResult.ok ? theme.green : theme.red }}>
                       {thisResult.msg}
                     </div>
                   )}

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { RuleTarget } from '../types'
 import { DATAHUB_API_URL } from '../env'
 import { lookupCharacterByGameId } from '../lib/character-lookup'
+import { theme, S } from '../lib/theme'
 
 interface TribeInfo { id: number; name: string; nameShort: string }
 
@@ -103,14 +104,15 @@ export function CreateRuleModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-1 border border-surface-3 rounded-lg p-6 w-96 space-y-4" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-sm font-semibold text-white">Add Rule</h2>
+    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={onClose}>
+      <div className="p-6 w-96 space-y-4" style={S.panel} onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-sm font-semibold" style={{ color: theme.textPrimary }}>Add Rule</h2>
 
         <div>
-          <label className="text-xs text-default block mb-1">Who does this rule apply to?</label>
+          <label className="text-xs block mb-1" style={{ color: theme.textSecondary }}>Who does this rule apply to?</label>
           <select
-            className="w-full bg-surface-2 border border-surface-3 rounded px-2 py-1.5 text-sm text-white"
+            className="w-full"
+            style={S.select}
             value={type}
             onChange={(e) => setType(e.target.value as typeof type)}
           >
@@ -122,9 +124,9 @@ export function CreateRuleModal({
 
         {type === 'tribe' && (
           <div ref={searchRef} className="relative">
-            <label className="text-xs text-default block mb-1">Search tribe</label>
+            <label className="text-xs block mb-1" style={{ color: theme.textSecondary }}>Search tribe</label>
             <input
-              className="w-full bg-surface-2 border border-surface-3 rounded px-2 py-1.5 text-sm text-white placeholder:text-default focus:outline-none focus:border-accent"
+              style={S.input}
               placeholder="Type a tribe name, ticker, or ID..."
               value={tribeQuery}
               onChange={(e) => { setTribeQuery(e.target.value); setShowSearch(true) }}
@@ -132,11 +134,17 @@ export function CreateRuleModal({
               autoFocus
             />
             {showSearch && filtered.length > 0 && (
-              <ul className="absolute z-10 mt-1 w-full bg-surface-1 border border-surface-3 rounded shadow-lg max-h-40 overflow-y-auto">
+              <ul
+                className="absolute z-10 mt-1 w-full shadow-lg max-h-40 overflow-y-auto"
+                style={{ background: theme.panelBg, border: `1px solid ${theme.border}` }}
+              >
                 {filtered.map((t) => (
                   <li key={t.id}>
                     <button
-                      className="w-full text-left px-2 py-1.5 text-xs hover:bg-surface-2 flex items-center gap-2"
+                      className="w-full text-left px-2 py-1.5 text-xs flex items-center gap-2"
+                      style={{ color: theme.textPrimary }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = theme.headerBg }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                       onClick={() => {
                         setTribeId(String(t.id))
                         setTribeName(`[${t.nameShort}] ${t.name}`)
@@ -144,26 +152,27 @@ export function CreateRuleModal({
                         setShowSearch(false)
                       }}
                     >
-                      <span className="text-accent font-mono">[{t.nameShort}]</span>
-                      <span className="text-white">{t.name}</span>
-                      <span className="text-default ml-auto">#{t.id}</span>
+                      <span className="font-mono" style={{ color: theme.orange }}>[{t.nameShort}]</span>
+                      <span style={{ color: theme.textPrimary }}>{t.name}</span>
+                      <span className="ml-auto" style={{ color: theme.textSecondary }}>#{t.id}</span>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
             {tribeId && (
-              <p className="text-xs text-green-400 mt-1">Selected: {tribeName}</p>
+              <p className="text-xs mt-1" style={{ color: theme.green }}>Selected: {tribeName}</p>
             )}
           </div>
         )}
 
         {type === 'character' && (
           <div>
-            <label className="text-xs text-default block mb-1">Player Game ID</label>
+            <label className="text-xs block mb-1" style={{ color: theme.textSecondary }}>Player Game ID</label>
             <div className="flex gap-2">
               <input
-                className="flex-1 bg-surface-2 border border-surface-3 rounded px-2 py-1.5 text-sm text-white font-mono placeholder:text-default focus:outline-none focus:border-accent"
+                className="flex-1 font-mono"
+                style={S.input}
                 placeholder="e.g. 2112080400"
                 value={charId}
                 onChange={(e) => {
@@ -177,19 +186,20 @@ export function CreateRuleModal({
               <button
                 onClick={handleCharLookup}
                 disabled={!charId.trim() || charLooking}
-                className="px-3 py-1.5 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-50"
+                className="disabled:opacity-50"
+                style={S.btn}
               >
                 {charLooking ? 'Searching...' : 'Verify'}
               </button>
             </div>
             {charName && (
-              <p className="text-xs text-green-400 mt-1">Found: {charName}</p>
+              <p className="text-xs mt-1" style={{ color: theme.green }}>Found: {charName}</p>
             )}
             {charNotFound && (
-              <p className="text-xs text-red-400 mt-1">Player not found. Check the ID and try again.</p>
+              <p className="text-xs mt-1" style={{ color: theme.red }}>Player not found. Check the ID and try again.</p>
             )}
             {!charName && !charNotFound && !charLooking && (
-              <p className="text-[10px] text-default mt-1">
+              <p className="text-[10px] mt-1" style={{ color: theme.textSecondary }}>
                 Enter the player's game ID and click Verify to confirm they exist.
               </p>
             )}
@@ -197,19 +207,24 @@ export function CreateRuleModal({
         )}
 
         {type === 'everyone' && (
-          <p className="text-xs text-default">
+          <p className="text-xs" style={{ color: theme.textSecondary }}>
             This rule will match all players. Typically used as a catch-all at the bottom of the list.
           </p>
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-3 py-1.5 text-xs text-default hover:text-white">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs"
+            style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
+          >
             Cancel
           </button>
           <button
             onClick={handleCreate}
             disabled={!canCreate()}
-            className="px-4 py-1.5 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-50"
+            className="disabled:opacity-50"
+            style={S.btn}
           >
             Add
           </button>
