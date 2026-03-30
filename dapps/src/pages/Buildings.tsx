@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useConnection, executeGraphQLQuery } from '@evefrontier/dapp-kit'
 import { useDAppKit } from '@mysten/dapp-kit-react'
 import { Transaction } from '@mysten/sui/transactions'
@@ -24,6 +25,7 @@ function hasExtension(a: OwnedAssembly): boolean {
 export function Buildings() {
   const { walletAddress, isConnected } = useConnection()
   const dAppKit = useDAppKit()
+  const qc = useQueryClient()
   const { data: owned, isLoading } = useOwnedAssemblies(walletAddress)
   const [installing, setInstalling] = useState<string | null>(null)
   const [result, setResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null)
@@ -127,7 +129,9 @@ export function Buildings() {
 
       await dAppKit.signAndExecuteTransaction({ transaction: tx })
 
-      setResult({ id: assembly.id, ok: true, msg: 'ef_guard installed! Refresh to see the update.' })
+      setResult({ id: assembly.id, ok: true, msg: 'ef_guard installed!' })
+      // Re-fetch assembly data to reflect the new extension status
+      await qc.invalidateQueries({ queryKey: ['owned-assemblies'] })
     } catch (err) {
       setResult({ id: assembly.id, ok: false, msg: err instanceof Error ? err.message : String(err) })
     } finally {
