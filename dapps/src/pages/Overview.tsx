@@ -707,6 +707,79 @@ export function Overview() {
         </div>
       )}
 
+      {/* Blocklist — direct on-chain, no conditions needed */}
+      {isOwner && bindingId && (
+        <details style={S.panel}>
+          <summary
+            className="px-4 py-3 text-xs font-semibold uppercase tracking-wider cursor-pointer"
+            style={{ color: theme.orange }}
+          >
+            Blocklist
+          </summary>
+          <div className="px-4 pb-3">
+            <p className="text-xs mb-2" style={{ color: theme.textMuted }}>
+              Blocklisted players are always denied, regardless of rules. Overrides everything.
+            </p>
+            <div className="flex gap-2">
+              <input
+                id="blocklist-input"
+                style={S.input}
+                placeholder="Player game ID (e.g. 2112079904)"
+                className="flex-1"
+              />
+              <button
+                style={S.btn}
+                onClick={async () => {
+                  const input = document.getElementById('blocklist-input') as HTMLInputElement
+                  const gameId = input?.value?.trim()
+                  if (!gameId) return
+                  try {
+                    const { Transaction } = await import('@mysten/sui/transactions')
+                    const { EFGUARD_PKG } = await import('../env')
+                    const tx = new Transaction()
+                    tx.moveCall({
+                      target: `${EFGUARD_PKG}::assembly_binding::add_to_blocklist`,
+                      arguments: [tx.object(bindingId), tx.pure.u64(gameId)],
+                    })
+                    await dAppKit.signAndExecuteTransaction({ transaction: tx })
+                    alert('Player blocklisted!')
+                    input.value = ''
+                  } catch (err) {
+                    alert(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+                  }
+                }}
+              >
+                Blocklist
+              </button>
+              <button
+                style={S.btnSmall}
+                onClick={async () => {
+                  const input = document.getElementById('blocklist-input') as HTMLInputElement
+                  const gameId = input?.value?.trim()
+                  if (!gameId) return
+                  try {
+                    const { Transaction } = await import('@mysten/sui/transactions')
+                    const { EFGUARD_PKG } = await import('../env')
+                    const tx = new Transaction()
+                    tx.moveCall({
+                      target: `${EFGUARD_PKG}::assembly_binding::remove_from_blocklist`,
+                      arguments: [tx.object(bindingId), tx.pure.u64(gameId)],
+                    })
+                    await dAppKit.signAndExecuteTransaction({ transaction: tx })
+                    alert('Player removed from blocklist!')
+                    input.value = ''
+                  } catch (err) {
+                    alert(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+                  }
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </details>
+      )}
+
       {/* Saved Rules management */}
       {isOwner && rules.length > 0 && (
         <details style={S.panel}>
