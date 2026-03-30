@@ -1,7 +1,7 @@
-/// Smart Gate extension. Checks access via `AssemblyBinding` rules and issues
-/// a `JumpPermit` on Allow, aborts on Deny/Default.
+/// Smart Gate extension. Checks access via `AssemblyBinding` condition proofs
+/// and issues a `JumpPermit` on Allow, aborts on Deny/Default.
 module ef_guard::gate_extension {
-    use ef_guard::assembly_binding::{Self, AssemblyBinding};
+    use ef_guard::assembly_binding::{Self, AssemblyBinding, ConditionProof};
     use ef_guard::identity_resolver;
     use world::access::{Self, OwnerCap};
     use world::character::Character;
@@ -52,14 +52,16 @@ module ef_guard::gate_extension {
         }
     }
 
+    /// Request a jump permit. Caller builds condition proofs in the PTB.
     public fun request_permit(
-        config:      &GateExtensionConfig,
-        binding:     &AssemblyBinding,
-        source_gate: &Gate,
-        dest_gate:   &Gate,
-        character:   &Character,
-        clock:       &Clock,
-        ctx:         &mut TxContext,
+        config:           &GateExtensionConfig,
+        binding:          &AssemblyBinding,
+        condition_proofs: &vector<ConditionProof>,
+        source_gate:      &Gate,
+        dest_gate:        &Gate,
+        character:        &Character,
+        clock:            &Clock,
+        ctx:              &mut TxContext,
     ) {
         assert!(object::id(source_gate) == config.gate_id, EWrongGate);
 
@@ -68,7 +70,9 @@ module ef_guard::gate_extension {
         let gate_id   = object::id(source_gate);
         let dest_id   = object::id(dest_gate);
 
-        let decision = assembly_binding::resolve_role(binding, config.gate_id, char_game_id, tribe_id);
+        let decision = assembly_binding::resolve_role(
+            binding, config.gate_id, char_game_id, condition_proofs,
+        );
 
         if (assembly_binding::is_allow(&decision)) {
             let expires_at = clock.timestamp_ms() + config.permit_ttl_ms;

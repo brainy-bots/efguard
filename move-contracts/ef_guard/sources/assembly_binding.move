@@ -4,13 +4,18 @@
 /// values evaluated top-to-bottom. The **first matching rule wins**. If no rule
 /// matches, access is **denied** (fail-safe default).
 ///
-/// # Minimal transaction design
-/// All policy operations accept a single assembly ID so they compose naturally
-/// in Sui PTBs — one transaction can register assemblies and set their policies.
+/// # Condition system
+/// All access checks are done through pluggable condition modules. A `Rule`
+/// references a condition by ID. At evaluation time, condition modules receive
+/// an `EvalContext` with all available character/assembly data and return a
+/// `ConditionProof`. The resolve function checks proofs against rules.
+///
+/// Built-in conditions (tribe, character, everyone) are separate modules that
+/// read EvalContext — no special treatment in the engine.
 ///
 /// # Middleware
-/// Extension modules call `resolve_role(binding, assembly_id, char_game_id, tribe_id)`
-/// to get the access decision. No external objects needed — everything is inline.
+/// Extension modules call `resolve_role(binding, assembly_id, proofs)`
+/// to get the access decision.
 module ef_guard::assembly_binding {
     use ef_guard::security_status::{Self, ThreatConfig};
     use sui::vec_map::{Self, VecMap};
@@ -25,32 +30,47 @@ module ef_guard::assembly_binding {
 
     // ── Data model ───────────────────────────────────────────────────────────
 
-    /// Who a rule applies to.
-    public enum RuleTarget has copy, drop, store {
-        Everyone,
-        Tribe     { tribe_id:     u32 },
-        Character { char_game_id: u64 },
-    }
-
-    /// What happens when a rule matches.
+    /// What happens when a rule's condition matches.
     public enum RuleEffect has copy, drop, store {
         Allow,
         Deny,
     }
 
     /// A single access-control rule.
+    /// `condition_id` references a condition config object. At evaluation time,
+    /// a matching `ConditionProof` with `passed = true` must be present.
     public struct Rule has copy, drop, store {
-        target: RuleTarget,
-        effect: RuleEffect,
+        condition_id: ID,
+        effect:       RuleEffect,
+    }
+
+    // ── Condition system ─────────────────────────────────────────────────────
+
+    /// Context available to condition modules at evaluation time.
+    /// Built from data already in the transaction — no extra cost to the caller.
+    /// Condition modules read what they need via the ctx_* accessors.
+    public struct EvalContext has copy, drop {
+        assembly_id:   ID,
+        char_game_id:  u64,
+        tribe_id:      u32,
+        char_address:  address,
+        binding_owner: address,
+    }
+
+    /// Proof that a condition was evaluated. Created by condition modules,
+    /// consumed by `resolve_role`.
+    public struct ConditionProof has drop {
+        condition_id: ID,
+        passed:       bool,
     }
 
     /// Per-assembly access policy: an ordered rule list.
-    /// First matching rule wins. No match = deny.
+    /// First matching rule wins. No match = Default (deny).
     public struct Policy has copy, store, drop {
         rules: vector<Rule>,
     }
 
-    /// The role returned by `resolve_role` for extension modules.
+    /// The access decision returned by `resolve_role`.
     public enum AccessDecision has copy, drop, store {
         Allow,
         Deny,
@@ -78,7 +98,7 @@ module ef_guard::assembly_binding {
     public struct AssemblyRegisteredEvent has copy, drop {
         binding_id:    ID,
         assembly_id:   ID,
-        assembly_type: u8,   // 0=gate 1=turret 2=ssu
+        assembly_type: u8,
     }
 
     public struct AssemblyDeregisteredEvent has copy, drop {
@@ -97,7 +117,7 @@ module ef_guard::assembly_binding {
     public struct BlocklistUpdatedEvent has copy, drop {
         binding_id:   ID,
         char_game_id: u64,
-        action:       u8,    // 0=added 1=removed
+        action:       u8,
         actor:        address,
     }
 
@@ -204,8 +224,7 @@ module ef_guard::assembly_binding {
 
     // ── Policy management ────────────────────────────────────────────────────
 
-    /// Replace the entire rule list for an assembly. Compose in a PTB to set
-    /// policies for many assemblies in one transaction.
+    /// Replace the entire rule list for an assembly.
     public fun set_policy(
         binding:     &mut AssemblyBinding,
         assembly_id: ID,
@@ -222,18 +241,18 @@ module ef_guard::assembly_binding {
         });
     }
 
-    /// Append a single rule to an assembly's policy. Useful for incremental edits.
+    /// Append a single rule to an assembly's policy.
     public fun add_rule(
-        binding:     &mut AssemblyBinding,
-        assembly_id: ID,
-        target:      RuleTarget,
-        effect:      RuleEffect,
-        ctx:         &TxContext,
+        binding:      &mut AssemblyBinding,
+        assembly_id:  ID,
+        condition_id: ID,
+        effect:       RuleEffect,
+        ctx:          &TxContext,
     ) {
         assert_owner(binding, ctx);
         assert!(vec_map::contains(&binding.policies, &assembly_id), EAssemblyNotRegistered);
         let policy = vec_map::get_mut(&mut binding.policies, &assembly_id);
-        policy.rules.push_back(Rule { target, effect });
+        policy.rules.push_back(Rule { condition_id, effect });
     }
 
     /// Remove the rule at `index` from an assembly's policy.
@@ -249,15 +268,17 @@ module ef_guard::assembly_binding {
         policy.rules.remove(index);
     }
 
-    // ── Role resolution (used by extensions) ─────────────────────────────────
+    // ── Role resolution ─────────────────────────────────────────────────────
 
     /// Evaluate access for a character on any assembly type.
-    /// Returns `Allow`, `Deny`, or `Default` (no policy / no match).
+    /// Iterates rules top-to-bottom. For each rule, checks if a matching
+    /// ConditionProof exists with `passed = true`. First match wins.
+    /// Blocklist is checked before any rules.
     public fun resolve_role(
-        binding:      &AssemblyBinding,
-        assembly_id:  ID,
-        char_game_id: u64,
-        tribe_id:     u32,
+        binding:          &AssemblyBinding,
+        assembly_id:      ID,
+        char_game_id:     u64,
+        condition_proofs: &vector<ConditionProof>,
     ): AccessDecision {
         // Blocklist always wins
         if (security_status::is_blocklisted(&binding.threat_config, char_game_id)) {
@@ -273,12 +294,7 @@ module ef_guard::assembly_binding {
         let mut i = 0;
         while (i < len) {
             let rule = &policy.rules[i];
-            let matches = match (&rule.target) {
-                RuleTarget::Everyone                     => true,
-                RuleTarget::Tribe     { tribe_id: t }    => *t == tribe_id,
-                RuleTarget::Character { char_game_id: c } => *c == char_game_id,
-            };
-            if (matches) {
+            if (has_passing_proof(condition_proofs, rule.condition_id)) {
                 return match (&rule.effect) {
                     RuleEffect::Allow => AccessDecision::Allow,
                     RuleEffect::Deny  => AccessDecision::Deny,
@@ -287,8 +303,54 @@ module ef_guard::assembly_binding {
             i = i + 1;
         };
 
-        AccessDecision::Default // no rule matched
+        AccessDecision::Default
     }
+
+    // ── Condition system: constructors & context ─────────────────────────────
+
+    /// Build an EvalContext from available transaction data.
+    /// Pass this to condition modules — they get full context for free.
+    public fun build_eval_context(
+        binding:      &AssemblyBinding,
+        assembly_id:  ID,
+        char_game_id: u64,
+        tribe_id:     u32,
+        char_address: address,
+    ): EvalContext {
+        EvalContext {
+            assembly_id,
+            char_game_id,
+            tribe_id,
+            char_address,
+            binding_owner: binding.owner,
+        }
+    }
+
+    /// Create a ConditionProof. Called by condition modules after evaluation.
+    public fun new_condition_proof(condition_id: ID, passed: bool): ConditionProof {
+        ConditionProof { condition_id, passed }
+    }
+
+    /// Create a rule. References a condition config by ID.
+    public fun rule(condition_id: ID, effect: RuleEffect): Rule {
+        Rule { condition_id, effect }
+    }
+
+    // ── EvalContext accessors ────────────────────────────────────────────────
+
+    public fun ctx_assembly_id(ctx: &EvalContext): ID        { ctx.assembly_id }
+    public fun ctx_char_game_id(ctx: &EvalContext): u64      { ctx.char_game_id }
+    public fun ctx_tribe_id(ctx: &EvalContext): u32          { ctx.tribe_id }
+    public fun ctx_char_address(ctx: &EvalContext): address   { ctx.char_address }
+    public fun ctx_binding_owner(ctx: &EvalContext): address  { ctx.binding_owner }
+
+    // ── Value constructors ──────────────────────────────────────────────────
+
+    public fun allow(): RuleEffect { RuleEffect::Allow }
+    public fun deny(): RuleEffect  { RuleEffect::Deny }
+
+    public fun is_allow(decision: &AccessDecision): bool  { *decision == AccessDecision::Allow }
+    public fun is_deny(decision: &AccessDecision): bool   { *decision == AccessDecision::Deny }
 
     // ── Threat config ────────────────────────────────────────────────────────
 
@@ -335,18 +397,6 @@ module ef_guard::assembly_binding {
     public fun contains_turret(binding: &AssemblyBinding, id: ID): bool { binding.turrets.contains(&id) }
     public fun contains_ssu(binding: &AssemblyBinding, id: ID): bool   { binding.storage_units.contains(&id) }
 
-    // ── Value constructors (for PTB callers) ─────────────────────────────────
-
-    public fun everyone(): RuleTarget                   { RuleTarget::Everyone }
-    public fun tribe(tribe_id: u32): RuleTarget         { RuleTarget::Tribe { tribe_id } }
-    public fun character(char_game_id: u64): RuleTarget { RuleTarget::Character { char_game_id } }
-    public fun allow(): RuleEffect                      { RuleEffect::Allow }
-    public fun deny(): RuleEffect                       { RuleEffect::Deny }
-    public fun rule(target: RuleTarget, effect: RuleEffect): Rule { Rule { target, effect } }
-
-    public fun is_allow(decision: &AccessDecision): bool  { *decision == AccessDecision::Allow }
-    public fun is_deny(decision: &AccessDecision): bool   { *decision == AccessDecision::Deny }
-
     // ── Internal helpers ─────────────────────────────────────────────────────
 
     fun assert_owner(binding: &AssemblyBinding, ctx: &TxContext) {
@@ -361,5 +411,18 @@ module ef_guard::assembly_binding {
         if (vec_map::contains(policies, &assembly_id)) {
             vec_map::remove(policies, &assembly_id);
         }
+    }
+
+    fun has_passing_proof(proofs: &vector<ConditionProof>, condition_id: ID): bool {
+        let len = proofs.length();
+        let mut i = 0;
+        while (i < len) {
+            let proof = &proofs[i];
+            if (proof.condition_id == condition_id && proof.passed) {
+                return true
+            };
+            i = i + 1;
+        };
+        false
     }
 }

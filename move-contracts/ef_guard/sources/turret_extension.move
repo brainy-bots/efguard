@@ -1,7 +1,7 @@
 /// Smart Turret extension. Applies ef_guard policy rules to each candidate's
 /// priority weight and returns a BCS-encoded target list.
 module ef_guard::turret_extension {
-    use ef_guard::assembly_binding::{Self, AssemblyBinding};
+    use ef_guard::assembly_binding::{Self, AssemblyBinding, ConditionProof};
     use ef_guard::identity_resolver;
     use ef_guard::security_status;
     use world::access::{Self, OwnerCap};
@@ -54,6 +54,7 @@ module ef_guard::turret_extension {
         turret:                &Turret,
         owner_character:       &Character,
         target_candidate_list: vector<u8>,
+        condition_proofs:      &vector<ConditionProof>,
     ): vector<u8> {
         assert!(object::id(turret) == config.turret_id, EWrongTurret);
 
@@ -70,7 +71,7 @@ module ef_guard::turret_extension {
         while (i < len) {
             let candidate = &candidates[i];
             let (final_weight, excluded, reason) = resolve_candidate(
-                config, binding, threat, candidate, owner_character,
+                config, binding, threat, candidate, owner_character, condition_proofs,
             );
 
             event::emit(TargetWeightedEvent {
@@ -110,11 +111,12 @@ module ef_guard::turret_extension {
     public fun share_config(config: TurretExtensionConfig) { transfer::share_object(config); }
 
     fun resolve_candidate(
-        config:          &TurretExtensionConfig,
-        binding:         &AssemblyBinding,
-        threat:          &ef_guard::security_status::ThreatConfig,
-        candidate:       &TargetCandidate,
-        owner_character: &Character,
+        config:           &TurretExtensionConfig,
+        binding:          &AssemblyBinding,
+        threat:           &ef_guard::security_status::ThreatConfig,
+        candidate:        &TargetCandidate,
+        owner_character:  &Character,
+        condition_proofs: &vector<ConditionProof>,
     ): (u64, bool, u8) {
         let char_game_id = (turret::character_id(candidate) as u64);
         let tribe_id     = turret::character_tribe(candidate);
@@ -128,7 +130,7 @@ module ef_guard::turret_extension {
             return (config.deny_weight, false, 2)
         };
 
-        let decision = assembly_binding::resolve_role(binding, config.turret_id, char_game_id, tribe_id);
+        let decision = assembly_binding::resolve_role(binding, config.turret_id, char_game_id, condition_proofs);
         if (assembly_binding::is_deny(&decision)) {
             return (config.deny_weight, false, 3)
         };

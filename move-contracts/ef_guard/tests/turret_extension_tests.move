@@ -1,7 +1,7 @@
 #[test_only]
 #[allow(unused_let_mut, unused_trailing_semi)]
 module ef_guard::turret_extension_tests {
-    use ef_guard::{assembly_binding, turret_extension};
+    use ef_guard::{assembly_binding, turret_extension, condition_character, condition_everyone};
     use std::{bcs, string::utf8, unit_test::destroy};
     use sui::{clock, test_scenario as ts};
     use world::{
@@ -209,33 +209,45 @@ module ef_guard::turret_extension_tests {
         config_id
     }
 
+    // ── Condition helpers ─────────────────────────────────────────────────────
+
+    fun create_char_a_condition(ts: &mut ts::Scenario): ID {
+        ts::next_tx(ts, user_a());
+        let cond = condition_character::new(CHAR_A_GAME_ID as u64, ts.ctx());
+        let cond_id = object::id(&cond);
+        condition_character::share(cond);
+        cond_id
+    }
+
+    fun create_everyone_condition(ts: &mut ts::Scenario): ID {
+        ts::next_tx(ts, user_a());
+        let cond = condition_everyone::new(ts.ctx());
+        let cond_id = object::id(&cond);
+        condition_everyone::share(cond);
+        cond_id
+    }
+
     // ── Policy helpers ────────────────────────────────────────────────────────
 
     /// Binding with a policy that allows CHAR_A on the given turret.
-    fun make_allow_binding(turret_id: ID, ctx: &mut TxContext): assembly_binding::AssemblyBinding {
+    fun make_allow_binding(turret_id: ID, char_cond_id: ID, ctx: &mut TxContext): assembly_binding::AssemblyBinding {
         let mut b = assembly_binding::new_binding(ctx);
         assembly_binding::register_turret(&mut b, turret_id, ctx);
         assembly_binding::set_policy(
             &mut b, turret_id,
-            vector[assembly_binding::rule(
-                assembly_binding::character(CHAR_A_GAME_ID as u64),
-                assembly_binding::allow(),
-            )],
+            vector[assembly_binding::rule(char_cond_id, assembly_binding::allow())],
             ctx,
         );
         b
     }
 
     /// Binding with a policy that denies CHAR_A on the given turret.
-    fun make_deny_binding(turret_id: ID, ctx: &mut TxContext): assembly_binding::AssemblyBinding {
+    fun make_deny_binding(turret_id: ID, char_cond_id: ID, ctx: &mut TxContext): assembly_binding::AssemblyBinding {
         let mut b = assembly_binding::new_binding(ctx);
         assembly_binding::register_turret(&mut b, turret_id, ctx);
         assembly_binding::set_policy(
             &mut b, turret_id,
-            vector[assembly_binding::rule(
-                assembly_binding::character(CHAR_A_GAME_ID as u64),
-                assembly_binding::deny(),
-            )],
+            vector[assembly_binding::rule(char_cond_id, assembly_binding::deny())],
             ctx,
         );
         b
@@ -255,6 +267,24 @@ module ef_guard::turret_extension_tests {
 
     fun make_empty_binding(ctx: &mut TxContext): assembly_binding::AssemblyBinding {
         assembly_binding::new_binding(ctx)
+    }
+
+    /// Build proofs for a single candidate given their character_id and tribe.
+    fun build_proofs_for_candidate(
+        ts: &ts::Scenario,
+        char_cond_id: ID,
+        binding: &assembly_binding::AssemblyBinding,
+        turret_id: ID,
+        char_game_id: u32,
+        tribe: u32,
+    ): vector<assembly_binding::ConditionProof> {
+        let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(ts, char_cond_id);
+        let eval_ctx = assembly_binding::build_eval_context(
+            binding, turret_id, char_game_id as u64, tribe, @0x0,
+        );
+        let proofs = vector[condition_character::verify(&char_cond, &eval_ctx)];
+        ts::return_shared(char_cond);
+        proofs
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────
@@ -292,17 +322,26 @@ module ef_guard::turret_extension_tests {
         bring_nwn_online(&mut ts, char_id, nwn_id);
         bring_turret_online(&mut ts, char_id, turret_id, nwn_id);
         let config_id = authorize_ef_guard_turret(&mut ts, char_id, turret_id);
+        let char_cond_id = create_char_a_condition(&mut ts);
 
         ts::next_tx(&mut ts, user_a());
         {
             let config = ts::take_shared_by_id<turret_extension::TurretExtensionConfig>(&ts, config_id);
             let turret = ts::take_shared_by_id<Turret>(&ts, turret_id);
             let owner = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_allow_binding(turret_id, ts.ctx());
+            let binding = make_allow_binding(turret_id, char_cond_id, ts.ctx());
+
+            let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(&ts, char_cond_id);
+            let eval_ctx = assembly_binding::build_eval_context(
+                &binding, turret_id, CHAR_A_GAME_ID as u64, TRIBE_X, @0x0,
+            );
+            let proofs = vector[condition_character::verify(&char_cond, &eval_ctx)];
+            ts::return_shared(char_cond);
 
             let result = turret_extension::get_target_priority_list(
                 &config, &binding, &turret, &owner,
                 one_candidate(1001, CHAR_A_GAME_ID, TRIBE_X, false, 500),
+                &proofs,
             );
 
             let entries = turret::unpack_return_priority_list(result);
@@ -327,17 +366,26 @@ module ef_guard::turret_extension_tests {
         bring_nwn_online(&mut ts, char_id, nwn_id);
         bring_turret_online(&mut ts, char_id, turret_id, nwn_id);
         let config_id = authorize_ef_guard_turret(&mut ts, char_id, turret_id);
+        let char_cond_id = create_char_a_condition(&mut ts);
 
         ts::next_tx(&mut ts, user_a());
         {
             let config = ts::take_shared_by_id<turret_extension::TurretExtensionConfig>(&ts, config_id);
             let turret = ts::take_shared_by_id<Turret>(&ts, turret_id);
             let owner = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_deny_binding(turret_id, ts.ctx());
+            let binding = make_deny_binding(turret_id, char_cond_id, ts.ctx());
+
+            let char_cond = ts::take_shared_by_id<condition_character::CharacterCondition>(&ts, char_cond_id);
+            let eval_ctx = assembly_binding::build_eval_context(
+                &binding, turret_id, CHAR_A_GAME_ID as u64, TRIBE_X, @0x0,
+            );
+            let proofs = vector[condition_character::verify(&char_cond, &eval_ctx)];
+            ts::return_shared(char_cond);
 
             let result = turret_extension::get_target_priority_list(
                 &config, &binding, &turret, &owner,
                 one_candidate(1001, CHAR_A_GAME_ID, TRIBE_X, false, 500),
+                &proofs,
             );
 
             let entries = turret::unpack_return_priority_list(result);
@@ -373,10 +421,12 @@ module ef_guard::turret_extension_tests {
             let binding = make_empty_binding(ts.ctx());
 
             let original_weight: u64 = 42;
+            let proofs = vector[];
             // Candidate from TRIBE_Y, different from owner's TRIBE_X -> pass-through
             let result = turret_extension::get_target_priority_list(
                 &config, &binding, &turret, &owner,
                 one_candidate(2001, 99, TRIBE_Y, false, original_weight),
+                &proofs,
             );
 
             let entries = turret::unpack_return_priority_list(result);
@@ -410,10 +460,12 @@ module ef_guard::turret_extension_tests {
             let owner = ts::take_shared_by_id<Character>(&ts, char_id);
             let binding = make_empty_binding(ts.ctx());
 
+            let proofs = vector[];
             // Same tribe as owner, not aggressor -> excluded (friendly)
             let result = turret_extension::get_target_priority_list(
                 &config, &binding, &turret, &owner,
                 one_candidate(3001, 77, TRIBE_X, false, 100),
+                &proofs,
             );
 
             let entries = turret::unpack_return_priority_list(result);
@@ -446,9 +498,11 @@ module ef_guard::turret_extension_tests {
             let owner = ts::take_shared_by_id<Character>(&ts, char_id);
             let binding = make_blocklist_binding(ts.ctx());
 
+            let proofs = vector[];
             let result = turret_extension::get_target_priority_list(
                 &config, &binding, &turret, &owner,
                 one_candidate(1001, CHAR_A_GAME_ID, TRIBE_X, false, 50),
+                &proofs,
             );
 
             let entries = turret::unpack_return_priority_list(result);
@@ -482,10 +536,12 @@ module ef_guard::turret_extension_tests {
             let owner = ts::take_shared_by_id<Character>(&ts, char_id);
             let binding = make_block_aggressors_binding(ts.ctx());
 
+            let proofs = vector[];
             // is_aggressor=true, block_aggressors=true -> deny_weight
             let result = turret_extension::get_target_priority_list(
                 &config, &binding, &turret, &owner,
                 one_candidate(1001, 88, TRIBE_Y, true, 50),
+                &proofs,
             );
 
             let entries = turret::unpack_return_priority_list(result);
@@ -521,11 +577,13 @@ module ef_guard::turret_extension_tests {
             let binding = make_empty_binding(ts.ctx());
 
             let original_weight: u64 = 75;
+            let proofs = vector[];
             // Aggressor from TRIBE_Y; block_aggressors=false -> aggressor check passes
             // -> default role -> passes through with original weight
             let result = turret_extension::get_target_priority_list(
                 &config, &binding, &turret, &owner,
                 one_candidate(1001, 88, TRIBE_Y, true, original_weight),
+                &proofs,
             );
 
             let entries = turret::unpack_return_priority_list(result);
@@ -540,7 +598,8 @@ module ef_guard::turret_extension_tests {
         ts::end(ts);
     }
 
-    /// Two candidates: one Allow (excluded), one Deny (deny_weight) -> only deny candidate in result.
+    /// Two candidates: one blocklisted (deny_weight), one default (pass-through).
+    /// Uses blocklist (per-candidate in turret extension) to achieve independent weighting.
     #[test]
     fun multiple_candidates_weighted_independently() {
         let mut ts = ts::begin(governor());
@@ -557,9 +616,12 @@ module ef_guard::turret_extension_tests {
             let config = ts::take_shared_by_id<turret_extension::TurretExtensionConfig>(&ts, config_id);
             let turret = ts::take_shared_by_id<Turret>(&ts, turret_id);
             let owner = ts::take_shared_by_id<Character>(&ts, char_id);
-            let binding = make_deny_binding(turret_id, ts.ctx());
+            // Blocklist CHAR_A -- blocklist is checked per-candidate inside the turret extension
+            let binding = make_blocklist_binding(ts.ctx());
 
-            // Candidate A (CHAR_A_GAME_ID) -> Deny policy -> deny_weight
+            let proofs = vector[];
+
+            // Candidate A (CHAR_A_GAME_ID) -> blocklisted -> deny_weight
             // Candidate B (char 99, TRIBE_Y) -> Default -> pass-through with its weight
             let original_weight: u64 = 77;
             let combined = {
@@ -580,11 +642,12 @@ module ef_guard::turret_extension_tests {
 
             let result = turret_extension::get_target_priority_list(
                 &config, &binding, &turret, &owner, combined,
+                &proofs,
             );
 
             let entries = turret::unpack_return_priority_list(result);
             assert!(entries.length() == 2);
-            // First candidate -> deny_weight
+            // First candidate -> deny_weight (blocklisted)
             assert!(turret::return_priority_weight(&entries[0]) == DENY_WEIGHT);
             // Second candidate -> original weight (default pass-through)
             assert!(turret::return_priority_weight(&entries[1]) == original_weight);
@@ -626,10 +689,12 @@ module ef_guard::turret_extension_tests {
             let owner = ts::take_shared_by_id<Character>(&ts, char_id);
             let binding = make_empty_binding(ts.ctx());
 
+            let proofs = vector[];
             // config1.turret_id == turret1_id, but we pass turret2 -> EWrongTurret
             turret_extension::get_target_priority_list(
                 &config1, &binding, &turret2, &owner,
                 one_candidate(1001, 99, TRIBE_Y, false, 100),
+                &proofs,
             );
             abort 999
         };

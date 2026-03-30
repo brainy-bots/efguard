@@ -14,7 +14,8 @@
     "issue-tribe-jump-permit": "tsx ts-scripts/smart_gate_extension/issue-tribe-jump-permit.ts",
     "jump-with-permit": "tsx ts-scripts/smart_gate_extension/jump-with-permit.ts",
     "collect-corpse-bounty": "tsx ts-scripts/smart_gate_extension/collect-corpse-bounty.ts",
-    "test:integration": "tsx ts-scripts/ef_guard/integration-test.ts"
+    "test:integration": "tsx ts-scripts/ef_guard/integration-test.ts",
+    "test:e2e": "tsx ts-scripts/ef_guard/e2e-test.ts"
   },
   "dependencies": {
     "@mysten/sui": "^2.0.0",
