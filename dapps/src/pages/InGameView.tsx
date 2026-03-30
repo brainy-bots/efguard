@@ -8,6 +8,7 @@ import { useOwnedAssemblies, displayName } from '../hooks/useOwnedAssemblies'
 import { useRules } from '../hooks/useRules'
 import { usePolicies } from '../hooks/usePolicies'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
+import { AsciiBackground } from '../components/AsciiBackground'
 
 // EVE Frontier UI color tokens (matched from screenshot)
 const C = {
@@ -82,7 +83,11 @@ export function InGameView({ itemId }: { itemId: string | null }) {
   })
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.textPrimary, fontFamily: "'Segoe UI', 'Arial Narrow', Arial, sans-serif", fontSize: '11px', padding: 0 }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.textPrimary, fontFamily: "'Segoe UI', 'Arial Narrow', Arial, sans-serif", fontSize: '11px', padding: 0, position: 'relative' }}>
+      <AsciiBackground />
+
+      {/* Content layer — above canvas */}
+      <div style={{ position: 'relative', zIndex: 1 }}>
 
       {/* Top bar — mimics the game's tab row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${C.border}`, background: C.headerBg }}>
@@ -237,6 +242,8 @@ export function InGameView({ itemId }: { itemId: string | null }) {
       <div style={{ borderTop: `1px solid ${C.border}`, padding: '6px 10px', marginTop: '8px' }}>
         <span style={{ color: C.textMuted, fontSize: '9px', letterSpacing: '0.1em' }}>EF GUARD // ACCESS CONTROL MIDDLEWARE</span>
       </div>
+
+      </div>{/* end content layer */}
     </div>
   )
 }
