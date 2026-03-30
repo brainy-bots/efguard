@@ -1,5 +1,5 @@
 /**
- * In-game assembly view — styled to match EVE Frontier's UI.
+ * In-game assembly view — matches EVE Frontier's UI style.
  * Route: #/ingame
  */
 import { useEffect } from 'react'
@@ -9,26 +9,22 @@ import { useRules } from '../hooks/useRules'
 import { usePolicies } from '../hooks/usePolicies'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
 
-const S = {
-  page: 'min-h-screen bg-[#0a0a0a] text-[#c8c8c8] px-3 py-2 font-mono text-[11px] leading-tight',
-  header: 'flex items-center justify-between border-b border-[#2a2a2a] pb-2 mb-3',
-  logo: 'text-[#e87b00] font-bold text-xs tracking-[0.2em] uppercase',
-  wallet: 'text-[10px] text-[#666] font-mono',
-  connectBtn: 'px-2 py-1 bg-[#e87b00] hover:bg-[#ff8c00] text-black text-[10px] font-bold uppercase tracking-wider',
-  section: 'border border-[#1f1f1f] bg-[#0f0f0f] mb-2',
-  sectionHeader: 'px-3 py-1.5 border-b border-[#1f1f1f] bg-[#141414] text-[#e87b00] text-[10px] uppercase tracking-[0.15em] font-bold',
-  sectionBody: 'px-3 py-2',
-  row: 'flex items-center justify-between py-1 border-b border-[#1a1a1a] last:border-0',
-  label: 'text-[#999]',
-  value: 'text-[#ddd]',
-  allow: 'text-[#4ade80] text-[10px] uppercase font-bold tracking-wider',
-  deny: 'text-[#f87171] text-[10px] uppercase font-bold tracking-wider',
-  online: 'text-[#4ade80]',
-  offline: 'text-[#f87171]',
-  muted: 'text-[#444] text-[10px]',
-  btn: 'px-3 py-1 bg-[#e87b00] hover:bg-[#ff8c00] text-black text-[10px] font-bold uppercase tracking-wider',
-  protected: 'text-[#e87b00] text-[10px] uppercase tracking-wider',
-} as const
+// EVE Frontier UI color tokens (matched from screenshot)
+const C = {
+  bg: '#111318',
+  panelBg: '#171b22',
+  headerBg: '#1a1e26',
+  border: '#252a33',
+  borderLight: '#2e3440',
+  orange: '#d4710a',
+  orangeHover: '#e87b00',
+  orangeDim: '#7a4200',
+  textPrimary: '#d0d0d0',
+  textSecondary: '#808890',
+  textMuted: '#505860',
+  green: '#44b840',
+  red: '#c83030',
+}
 
 export function InGameView({ itemId }: { itemId: string | null }) {
   const { walletAddress, isConnected, handleConnect, hasEveVault } = useConnection()
@@ -64,164 +60,182 @@ export function InGameView({ itemId }: { itemId: string | null }) {
       })
   })
 
+  // Shared styles matching game UI
+  const panelStyle = { background: C.panelBg, border: `1px solid ${C.border}` }
+  const headerStyle = { background: C.headerBg, borderBottom: `1px solid ${C.border}`, color: C.orange, fontSize: '10px', letterSpacing: '0.12em', fontWeight: 700, textTransform: 'uppercase' as const, padding: '6px 10px' }
+  const rowStyle = { borderBottom: `1px solid ${C.border}`, padding: '5px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }
+  const labelStyle = { color: C.textSecondary, fontSize: '11px' }
+  const valueStyle = { color: C.textPrimary, fontSize: '11px' }
+  const btnStyle = { background: C.orange, color: '#000', border: 'none', padding: '5px 14px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', cursor: 'pointer' }
+  const tabStyle = (active: boolean) => ({
+    background: active ? C.headerBg : 'transparent',
+    color: active ? C.orange : C.textSecondary,
+    borderBottom: active ? `2px solid ${C.orange}` : '2px solid transparent',
+    padding: '6px 14px',
+    fontSize: '10px',
+    fontWeight: 700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.1em',
+    cursor: 'pointer',
+    border: 'none',
+    borderBottomStyle: 'solid' as const,
+  })
+
   return (
-    <div className={S.page}>
-      {/* Header */}
-      <div className={S.header}>
-        <div className="flex items-center gap-3">
-          <span className={S.logo}>ef guard</span>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.textPrimary, fontFamily: "'Segoe UI', 'Arial Narrow', Arial, sans-serif", fontSize: '11px', padding: 0 }}>
+
+      {/* Top bar — mimics the game's tab row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${C.border}`, background: C.headerBg }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+          <div style={tabStyle(true)}>
+            EF GUARD
+          </div>
           {assembly && (
-            <>
-              <span className={S.muted}>|</span>
-              <span className={S.value}>{displayName(assembly)}</span>
-            </>
+            <div style={{ ...tabStyle(false), color: C.textMuted }}>
+              {displayName(assembly)}
+            </div>
           )}
         </div>
-        {!isConnected ? (
-          <button onClick={handleConnect} className={S.connectBtn}>Connect</button>
-        ) : (
-          <span className={S.wallet}>{walletAddress?.slice(0, 8)}..{walletAddress?.slice(-4)}</span>
-        )}
+        <div style={{ padding: '0 10px' }}>
+          {!isConnected ? (
+            <button onClick={handleConnect} style={btnStyle}>Connect</button>
+          ) : (
+            <span style={{ color: C.textMuted, fontSize: '10px', fontFamily: 'monospace' }}>
+              {walletAddress?.slice(0, 8)}..{walletAddress?.slice(-4)}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Connecting */}
-      {!isConnected && (
-        <div className={S.section}>
-          <div className={S.sectionBody}>
-            <span className={S.muted}>Connecting wallet...</span>
-          </div>
-        </div>
-      )}
+      <div style={{ padding: '8px' }}>
 
-      {/* Loading specific building */}
-      {isConnected && itemId && !assembly && (
-        <div className={S.section}>
-          <div className={S.sectionBody}>
-            <span className={S.muted}>Loading building data...</span>
+        {/* Connecting */}
+        {!isConnected && (
+          <div style={{ ...panelStyle, marginBottom: 8 }}>
+            <div style={{ padding: '12px 10px', color: C.textMuted }}>Connecting wallet...</div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Overview — no specific building */}
-      {isConnected && !itemId && (
-        <>
-          <div className={S.section}>
-            <div className={S.sectionHeader}>Your Protected Buildings</div>
-            <div className={S.sectionBody}>
+        {/* Loading specific building */}
+        {isConnected && itemId && !assembly && (
+          <div style={{ ...panelStyle, marginBottom: 8 }}>
+            <div style={{ padding: '12px 10px', color: C.textMuted }}>Loading building data...</div>
+          </div>
+        )}
+
+        {/* Overview — no specific building */}
+        {isConnected && !itemId && (
+          <>
+            <div style={{ ...panelStyle, marginBottom: 8 }}>
+              <div style={headerStyle}>Your Protected Buildings</div>
               {protectedBuildings.length === 0 ? (
-                <span className={S.muted}>No buildings with ef guard installed.</span>
+                <div style={{ padding: '10px', color: C.textMuted }}>No buildings with ef guard installed.</div>
               ) : (
-                protectedBuildings.map((a) => (
-                  <div key={a.id} className={S.row}>
-                    <span className={S.value}>{displayName(a)}</span>
-                    <div className="flex items-center gap-3">
-                      <span className={a.details?.status === 'ONLINE' ? S.online : S.offline}>
+                protectedBuildings.map((a, i) => (
+                  <div key={a.id} style={{ ...rowStyle, ...(i === protectedBuildings.length - 1 ? { borderBottom: 'none' } : {}) }}>
+                    <span style={valueStyle}>{displayName(a)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ color: a.details?.status === 'ONLINE' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }}>
                         {a.details?.status ?? '?'}
                       </span>
-                      <span className={S.protected}>Protected</span>
+                      <span style={{ color: C.orange, fontSize: '10px', letterSpacing: '0.08em' }}>PROTECTED</span>
                     </div>
                   </div>
                 ))
               )}
             </div>
-          </div>
 
-          {isOwner && (
-            <div className="mt-3">
-              <a href={window.location.origin + window.location.pathname + '#/'} className={S.btn}>
+            {isOwner && (
+              <a href={window.location.origin + window.location.pathname + '#/'} style={{ ...btnStyle, display: 'inline-block', textDecoration: 'none' }}>
                 Admin Panel
               </a>
-            </div>
-          )}
-        </>
-      )}
+            )}
+          </>
+        )}
 
-      {/* Specific building view */}
-      {isConnected && assembly && (
-        <>
-          {/* Building info */}
-          <div className={S.section}>
-            <div className={S.sectionHeader}>Building Status</div>
-            <div className={S.sectionBody}>
-              <div className={S.row}>
-                <span className={S.label}>Name</span>
-                <span className={S.value}>{displayName(assembly)}</span>
+        {/* Specific building view */}
+        {isConnected && assembly && (
+          <>
+            {/* Building info — mimics the "Testing About Option" panel from the game */}
+            <div style={{ ...panelStyle, marginBottom: 8 }}>
+              <div style={headerStyle}>Building Status</div>
+              <div style={rowStyle}>
+                <span style={labelStyle}>Name</span>
+                <span style={valueStyle}>{displayName(assembly)}</span>
               </div>
               {assembly.details?.description && (
-                <div className={S.row}>
-                  <span className={S.label}>Description</span>
-                  <span className={S.value}>{assembly.details.description}</span>
+                <div style={rowStyle}>
+                  <span style={labelStyle}>Description</span>
+                  <span style={valueStyle}>{assembly.details.description}</span>
                 </div>
               )}
-              <div className={S.row}>
-                <span className={S.label}>Status</span>
-                <span className={assembly.details?.status === 'ONLINE' ? S.online : S.offline}>
+              <div style={rowStyle}>
+                <span style={labelStyle}>Status</span>
+                <span style={{ color: assembly.details?.status === 'ONLINE' ? C.green : C.red, fontSize: '11px', fontWeight: 600 }}>
                   {assembly.details?.status ?? '?'}
                 </span>
               </div>
-              <div className={S.row}>
-                <span className={S.label}>Protection</span>
+              <div style={{ ...rowStyle, borderBottom: 'none' }}>
+                <span style={labelStyle}>Protection</span>
                 {assembly.details?.extension ? (
-                  <span className={S.protected}>Active</span>
+                  <span style={{ color: C.orange, fontWeight: 600 }}>Active</span>
                 ) : (
-                  <span className={S.muted}>None</span>
+                  <span style={{ color: C.textMuted }}>None</span>
                 )}
               </div>
             </div>
-          </div>
 
-          {/* Access rules */}
-          <div className={S.section}>
-            <div className={S.sectionHeader}>Access Rules</div>
-            <div className={S.sectionBody}>
+            {/* Access rules */}
+            <div style={{ ...panelStyle, marginBottom: 8 }}>
+              <div style={headerStyle}>Access Rules</div>
               {activeRules.length > 0 ? (
                 activeRules.map((r, i) => (
-                  <div key={r.id} className={S.row}>
-                    <div className="flex items-center gap-2">
-                      <span className={S.muted}>{String(i + 1).padStart(2, '0')}</span>
-                      <span className={S.value}>{r.label}</span>
+                  <div key={r.id} style={{ ...rowStyle, ...(i === activeRules.length - 1 ? { borderBottom: 'none' } : {}) }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: C.textMuted, width: '16px' }}>{String(i + 1).padStart(2, '0')}</span>
+                      <span style={valueStyle}>{r.label}</span>
                     </div>
-                    <span className={r.effect === 'Allow' ? S.allow : S.deny}>
+                    <span style={{ color: r.effect === 'Allow' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                       {r.effect}
                     </span>
                   </div>
                 ))
               ) : (
-                <span className={S.muted}>No rules configured.</span>
+                <div style={{ padding: '10px', color: C.textMuted }}>No rules configured.</div>
               )}
             </div>
-          </div>
 
-          {/* Owner management */}
-          {isOwner && (
-            <div className={S.section}>
-              <div className={S.sectionHeader}>Management</div>
-              <div className={S.sectionBody}>
-                {containingGroups.length > 0 && (
-                  <div className={S.row}>
-                    <span className={S.label}>Building Group</span>
-                    <span className={S.value}>{containingGroups.map((g) => g.name).join(', ')}</span>
+            {/* Owner management */}
+            {isOwner && (
+              <div style={{ ...panelStyle, marginBottom: 8 }}>
+                <div style={headerStyle}>Management</div>
+                <div style={{ padding: '8px 10px' }}>
+                  {containingGroups.length > 0 && (
+                    <div style={{ ...rowStyle, border: 'none', padding: '4px 0' }}>
+                      <span style={labelStyle}>Building Group</span>
+                      <span style={valueStyle}>{containingGroups.map((g) => g.name).join(', ')}</span>
+                    </div>
+                  )}
+                  <div style={{ marginTop: '8px' }}>
+                    <a
+                      href={window.location.origin + window.location.pathname + '#/'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ ...btnStyle, display: 'inline-block', textDecoration: 'none' }}
+                    >
+                      Admin Panel
+                    </a>
                   </div>
-                )}
-                <div className="mt-2">
-                  <a
-                    href={window.location.origin + window.location.pathname + '#/'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={S.btn}
-                  >
-                    Admin Panel
-                  </a>
                 </div>
               </div>
-            </div>
-          )}
-        </>
-      )}
+            )}
+          </>
+        )}
+      </div>
 
       {/* Footer */}
-      <div className="mt-4 border-t border-[#1a1a1a] pt-2">
-        <span className={S.muted}>ef guard // access control middleware</span>
+      <div style={{ borderTop: `1px solid ${C.border}`, padding: '6px 10px', marginTop: '8px' }}>
+        <span style={{ color: C.textMuted, fontSize: '9px', letterSpacing: '0.1em' }}>EF GUARD // ACCESS CONTROL MIDDLEWARE</span>
       </div>
     </div>
   )
