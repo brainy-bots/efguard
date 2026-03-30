@@ -6,8 +6,18 @@ import { Debug } from './pages/Debug'
 import { InGameView } from './pages/InGameView'
 
 // Detect in-game context: game client passes ?itemId=X&tenant=Y
+// Check both search params and hash params (game might append either way)
 const params = new URLSearchParams(window.location.search)
-const inGameItemId = params.get('itemId')
+const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '')
+const inGameItemId = params.get('itemId') || hashParams.get('itemId')
+
+// Debug: log what the game sent (remove after testing)
+if (typeof window !== 'undefined') {
+  console.log('[ef_guard] URL:', window.location.href)
+  console.log('[ef_guard] search:', window.location.search)
+  console.log('[ef_guard] hash:', window.location.hash)
+  console.log('[ef_guard] itemId:', inGameItemId)
+}
 
 export function App() {
   // In-game: show focused assembly view, no nav bar
