@@ -45,6 +45,14 @@ export function useRules(walletAddress?: string | null) {
     return rule
   }, [wallet])
 
+  const updateRule = useCallback((id: string, updates: Partial<SavedRule>) => {
+    setRules((prev) => {
+      const next = prev.map((r) => r.id === id ? { ...r, ...updates } : r)
+      save(next, wallet)
+      return next
+    })
+  }, [wallet])
+
   const deleteRule = useCallback((id: string) => {
     setRules((prev) => {
       const next = prev.filter((r) => r.id !== id)
@@ -53,5 +61,5 @@ export function useRules(walletAddress?: string | null) {
     })
   }, [wallet])
 
-  return { rules, createRule, deleteRule }
+  return { rules, createRule, updateRule, deleteRule }
 }
