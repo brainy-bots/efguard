@@ -5,6 +5,7 @@ import { Buildings } from './pages/Buildings'
 import { Debug } from './pages/Debug'
 import { InGameView } from './pages/InGameView'
 import { theme } from './lib/theme'
+import { AsciiBackground } from './components/AsciiBackground'
 
 const params = new URLSearchParams(window.location.search)
 const itemId = params.get('itemId')
@@ -14,9 +15,10 @@ function AppContent() {
   const isInGame = location.pathname === '/ingame'
 
   return (
-    <div className={isInGame ? '' : 'min-h-screen text-white'} style={isInGame ? undefined : { background: theme.bg }}>
+    <div className={isInGame ? '' : 'min-h-screen text-white'} style={isInGame ? undefined : { background: theme.bg, position: 'relative' }}>
+      {!isInGame && <AsciiBackground />}
       {!isInGame && <NavBar />}
-      <main>
+      <main style={isInGame ? undefined : { position: 'relative', zIndex: 1 }}>
         <Routes>
           <Route path="/ingame" element={<InGameView itemId={itemId} />} />
           <Route path="/buildings" element={<Buildings />} />
