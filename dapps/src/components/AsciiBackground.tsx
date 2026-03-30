@@ -53,7 +53,7 @@ export function AsciiBackground() {
       canvas!.height = canvas!.offsetHeight
       initColumns()
       zones = []
-      for (let i = 0; i < 4; i++) spawnZone()
+      for (let i = 0; i < 2; i++) spawnZone()
     }
 
     function initColumns() {
@@ -80,15 +80,16 @@ export function AsciiBackground() {
     }
 
     function spawnZone() {
-      const w = 40 + Math.random() * 120
-      const h = 30 + Math.random() * 100
+      // Large rectangles covering significant chunks of the screen
+      const w = canvas!.width * (0.2 + Math.random() * 0.5)
+      const h = canvas!.height * (0.2 + Math.random() * 0.5)
       zones.push({
-        x: Math.random() * (canvas!.width - w),
-        y: Math.random() * (canvas!.height - h),
+        x: Math.random() * (canvas!.width - w * 0.5) - w * 0.25,
+        y: Math.random() * (canvas!.height - h * 0.5) - h * 0.25,
         w, h,
         variant: Math.floor(Math.random() * ZONE_COLORS.length),
         life: 0,
-        maxLife: 300 + Math.random() * 600,
+        maxLife: 800 + Math.random() * 1200, // slow: 13-33 seconds at 60fps
       })
     }
 
@@ -99,9 +100,9 @@ export function AsciiBackground() {
 
       for (const zone of zones) {
         if (cx >= zone.x && cx <= zone.x + zone.w && cy >= zone.y && cy <= zone.y + zone.h) {
-          // Fade zone in/out
-          const fadeIn = Math.min(zone.life / 60, 1)
-          const fadeOut = Math.min((zone.maxLife - zone.life) / 60, 1)
+          // Slow fade in/out — breathe effect
+          const fadeIn = Math.min(zone.life / 200, 1)
+          const fadeOut = Math.min((zone.maxLife - zone.life) / 200, 1)
           const zoneFade = Math.min(fadeIn, fadeOut)
 
           if (zoneFade > zoneAlpha) {
@@ -137,8 +138,8 @@ export function AsciiBackground() {
           zones.splice(i, 1)
         }
       }
-      // Spawn new zones occasionally
-      if (tick % 120 === 0 && zones.length < 6) {
+      // Spawn new zones slowly — they can overlap
+      if (tick % 300 === 0 && zones.length < 5) {
         spawnZone()
       }
 
