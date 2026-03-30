@@ -13,13 +13,19 @@ const TYPE_LABELS: Record<string, string> = {
 
 const DAPP_URL = 'https://brainy-bots.github.io/efguard/'
 
-function canInstallExtension(a: OwnedAssembly): boolean {
-  // Only gate, turret, and ssu have extension support
-  return ['gate', 'turret', 'ssu'].includes(a.type) && !a.details?.extension
+function supportsExtension(a: OwnedAssembly): boolean {
+  return ['gate', 'turret', 'ssu'].includes(a.type)
 }
 
-function hasExtension(a: OwnedAssembly): boolean {
-  return !!a.details?.extension
+function hasEfGuardExtension(a: OwnedAssembly): boolean {
+  // Check if the extension type contains our package ID
+  const ext = a.details?.extension
+  if (!ext) return false
+  return typeof ext === 'string' && ext.includes(EFGUARD_PKG)
+}
+
+function hasOtherExtension(a: OwnedAssembly): boolean {
+  return !!a.details?.extension && !hasEfGuardExtension(a)
 }
 
 export function Buildings() {
@@ -190,16 +196,19 @@ export function Buildings() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {hasExtension(a) && (
+                      {hasEfGuardExtension(a) && (
                         <span className="text-green-400 text-[10px] font-semibold">ef_guard active</span>
                       )}
-                      {canInstallExtension(a) && (
+                      {hasOtherExtension(a) && (
+                        <span className="text-yellow-400 text-[10px] font-semibold">Other extension</span>
+                      )}
+                      {supportsExtension(a) && (
                         <button
                           onClick={() => handleInstall(a)}
                           disabled={isInstalling}
                           className="px-3 py-1.5 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-50"
                         >
-                          {isInstalling ? 'Installing...' : 'Install ef_guard'}
+                          {isInstalling ? 'Installing...' : hasEfGuardExtension(a) ? 'Reinstall' : hasOtherExtension(a) ? 'Replace with ef_guard' : 'Install ef_guard'}
                         </button>
                       )}
                       {a.type === 'assembly' && (
