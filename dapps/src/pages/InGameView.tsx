@@ -88,25 +88,65 @@ export function InGameView({ itemId }: { itemId: string | null }) {
           {/* Overview — no specific building */}
           {isConnected && !itemId && (
             <>
-              <div style={{ ...panelStyle, marginBottom: 8 }}>
-                <div style={headerStyle}>Your Protected Buildings</div>
-                {protectedBuildings.length === 0 ? (
-                  <div style={{ padding: '12px 10px', color: C.textMuted }}>No buildings with ef guard installed.</div>
-                ) : (
-                  protectedBuildings.map((a, i) => (
-                    <div key={a.id} style={{ ...rowStyle, ...(i === protectedBuildings.length - 1 ? { borderBottom: 'none' } : {}) }}>
-                      <span style={valueStyle}>{displayName(a)}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ color: a.details?.status === 'ONLINE' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }}>
-                          {a.details?.status ?? '?'}
-                        </span>
-                        <span style={{ color: C.orange, fontSize: '10px', letterSpacing: '0.08em' }}>PROTECTED</span>
+              {protectedBuildings.length === 0 ? (
+                <div style={{ ...panelStyle, minHeight: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: C.textMuted }}>No buildings with ef guard installed.</span>
+                </div>
+              ) : (
+                protectedBuildings.map((a) => {
+                  // Find rules for this specific building
+                  const buildingGroups = groups.filter((g) =>
+                    g.entries.some((e) => e.assemblyId === a.id),
+                  )
+                  const buildingRules = buildingGroups.flatMap((g) => {
+                    const policy = policies.find((p) => p.buildingGroupId === g.id)
+                    if (!policy) return []
+                    return policy.entries
+                      .filter((e) => e.enabled)
+                      .sort((x, y) => x.order - y.order)
+                      .map((e) => {
+                        const rule = rules.find((r) => r.id === e.ruleId)
+                        return { ...e, label: rule?.label ?? 'Unknown' }
+                      })
+                  })
+
+                  return (
+                    <div key={a.id} style={{ marginBottom: 8 }}>
+                      {/* Building header */}
+                      <div style={{ ...panelStyle, minHeight: '80px' }}>
+                        <div style={headerStyle}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>{displayName(a)}</span>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                              <span style={{ color: a.details?.status === 'ONLINE' ? C.green : C.red }}>
+                                {a.details?.status ?? '?'}
+                              </span>
+                              <span style={{ color: C.orange }}>PROTECTED</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Rules for this building */}
+                        {buildingRules.length > 0 ? (
+                          buildingRules.map((r, i) => (
+                            <div key={r.id} style={{ ...rowStyle, ...(i === buildingRules.length - 1 ? { borderBottom: 'none' } : {}) }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: C.textMuted, width: '16px' }}>{String(i + 1).padStart(2, '0')}</span>
+                                <span style={valueStyle}>{r.label}</span>
+                              </div>
+                              <span style={{ color: r.effect === 'Allow' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                {r.effect}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div style={{ padding: '12px 10px', color: C.textMuted }}>No rules configured.</div>
+                        )}
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-
+                  )
+                })
+              )}
             </>
           )}
 
