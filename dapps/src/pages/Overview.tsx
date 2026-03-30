@@ -76,18 +76,38 @@ export function Overview() {
     return rules.find((r) => r.id === ruleId)
   }
 
-  function getRuleLabel(ruleId: string): string {
+  function RuleLabel({ ruleId }: { ruleId: string }) {
     const rule = getRule(ruleId)
-    if (!rule) return 'Unknown rule'
+    if (!rule) return <span className="text-default">Unknown rule</span>
     const { target } = rule
-    if (target.type === 'tribe') return `Tribe: ${rule.label}`
-    if (target.type === 'character') return `Player: ${rule.label.replace(/^Character /, '')}`
-    if (target.type === 'everyone') return 'Everyone'
-    return rule.label
-  }
 
-  function getRuleTarget(ruleId: string): RuleTarget | null {
-    return getRule(ruleId)?.target ?? null
+    const typeColors: Record<string, string> = {
+      tribe: 'text-blue-400',
+      character: 'text-purple-400',
+      everyone: 'text-yellow-400',
+    }
+    const typeLabels: Record<string, string> = {
+      tribe: 'Tribe',
+      character: 'Player',
+      everyone: 'Everyone',
+    }
+    const color = typeColors[target.type] ?? 'text-default'
+    const typeLabel = typeLabels[target.type] ?? target.type
+
+    if (target.type === 'everyone') {
+      return <span className={color}>{typeLabel}</span>
+    }
+
+    const nameLabel = target.type === 'character'
+      ? rule.label.replace(/^Character /, '')
+      : rule.label
+
+    return (
+      <span>
+        <span className={`${color} text-[10px] uppercase font-semibold mr-1.5`}>{typeLabel}</span>
+        <span>{nameLabel}</span>
+      </span>
+    )
   }
 
   function sortedEntries(entries: PolicyEntry[]): PolicyEntry[] {
@@ -375,16 +395,10 @@ export function Overview() {
                   {/* Priority number */}
                   <span className="text-default w-4 text-center">{i + 1}</span>
 
-                  {/* Rule label with type badge */}
+                  {/* Rule label */}
                   <span className={`flex-1 flex items-center gap-2 ${entry.enabled ? '' : 'line-through opacity-50'}`}>
-                    {(() => {
-                      const target = getRuleTarget(entry.ruleId)
-                      const badge = target?.type === 'tribe' ? 'T' : target?.type === 'character' ? 'P' : '*'
-                      const badgeColor = target?.type === 'tribe' ? 'text-blue-400' : target?.type === 'character' ? 'text-purple-400' : 'text-yellow-400'
-                      return <span className={`${badgeColor} text-[10px] font-mono font-bold`} title={target?.type ?? ''}>{badge}</span>
-                    })()}
                     <span className={entry.enabled ? 'text-white' : 'text-default'}>
-                      {getRuleLabel(entry.ruleId)}
+                      <RuleLabel ruleId={entry.ruleId} />
                     </span>
                     {/* Condition warning — only shown as icon, no text */}
                     {(() => {
