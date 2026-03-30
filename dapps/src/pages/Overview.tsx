@@ -50,7 +50,7 @@ export function Overview() {
   const dAppKit = useDAppKit()
   const { data: owned } = useOwnedAssemblies(walletAddress)
   const { groups, createGroup, addEntry: addBuildingEntry } = useBuildingGroups(walletAddress)
-  const { rules, createRule } = useRules(walletAddress)
+  const { rules, createRule, deleteRule } = useRules(walletAddress)
   const {
     policies, addGroupPolicy, removeGroupPolicy,
     addEntry, removeEntry, toggleEntry, setEffect,
@@ -475,9 +475,12 @@ export function Overview() {
                     }}
                   >
                     <option value="" disabled>+ Add rule...</option>
-                    {rules.map((r) => (
-                      <option key={r.id} value={r.id}>{r.label}</option>
-                    ))}
+                    {rules
+                      .filter((r) => !sorted.some((e) => e.ruleId === r.id))
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>{r.label}</option>
+                      ))
+                    }
                     <option value="__new__">Create new rule...</option>
                   </select>
                 </div>
@@ -531,6 +534,28 @@ export function Overview() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Saved Rules management */}
+      {isOwner && rules.length > 0 && (
+        <details className="bg-surface-1 border border-surface-3 rounded-lg">
+          <summary className="px-4 py-3 text-xs font-semibold text-default uppercase tracking-wider cursor-pointer hover:text-white">
+            Saved Rules ({rules.length})
+          </summary>
+          <div className="px-4 pb-3 space-y-1">
+            {rules.map((r) => (
+              <div key={r.id} className="flex items-center justify-between text-xs py-1">
+                <span className="text-white">{r.label}</span>
+                <button
+                  onClick={() => deleteRule(r.id)}
+                  className="text-default hover:text-red-400 text-[10px]"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       {/* Modals */}
