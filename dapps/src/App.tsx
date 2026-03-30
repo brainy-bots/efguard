@@ -5,27 +5,22 @@ import { Buildings } from './pages/Buildings'
 import { Debug } from './pages/Debug'
 import { InGameView } from './pages/InGameView'
 
-// Detect in-game context: game client passes ?itemId=X&tenant=Y
-// Check both search params and hash params (game might append either way)
+// Check for itemId in search params (game might pass it)
 const params = new URLSearchParams(window.location.search)
-const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '')
-const inGameItemId = params.get('itemId') || hashParams.get('itemId')
+const itemId = params.get('itemId')
 
-// Debug: log what the game sent (remove after testing)
-if (typeof window !== 'undefined') {
-  console.log('[ef_guard] URL:', window.location.href)
-  console.log('[ef_guard] search:', window.location.search)
-  console.log('[ef_guard] hash:', window.location.hash)
-  console.log('[ef_guard] itemId:', inGameItemId)
-}
+// Detect if we're in the admin panel (hash route) or in-game (bare URL)
+// Admin panel: https://host/efguard/#/buildings
+// In-game:    https://host/efguard/ or https://host/efguard/?itemId=X
+const hasHashRoute = window.location.hash.startsWith('#/')
 
 export function App() {
-  // In-game: show focused assembly view, no nav bar
-  if (inGameItemId) {
-    return <InGameView itemId={inGameItemId} />
+  // No hash route = in-game view (or landing page)
+  if (!hasHashRoute) {
+    return <InGameView itemId={itemId} />
   }
 
-  // Admin panel: full navigation
+  // Hash route = admin panel
   return (
     <HashRouter>
       <div className="min-h-screen bg-surface-0 text-white">

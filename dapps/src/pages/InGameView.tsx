@@ -15,7 +15,7 @@ import { useRules } from '../hooks/useRules'
 import { usePolicies } from '../hooks/usePolicies'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
 
-export function InGameView({ itemId }: { itemId: string }) {
+export function InGameView({ itemId }: { itemId: string | null }) {
   const { walletAddress, isConnected, handleConnect, hasEveVault } = useConnection()
   const { data: owned } = useOwnedAssemblies(walletAddress)
   const { rules } = useRules(walletAddress)
@@ -31,12 +31,14 @@ export function InGameView({ itemId }: { itemId: string }) {
 
   // Find the assembly matching the itemId
   // Find the assembly matching the itemId from the game URL
-  // The game might pass the item_id (numeric) or the object ID
-  const assembly = owned?.assemblies.find((a) =>
-    a.id === itemId || a.id.includes(itemId),
-  )
+  const assembly = itemId
+    ? owned?.assemblies.find((a) => a.id === itemId || a.id.includes(itemId))
+    : null
 
-  // Check if the connected wallet is the owner of this assembly
+  // All buildings with extensions (for when no specific itemId is given)
+  const protectedBuildings = owned?.assemblies.filter((a) => !!a.details?.extension) ?? []
+
+  // Check if the connected wallet is the owner
   const isOwner = !!owned && !!walletAddress
 
   // Find which building groups contain this assembly
@@ -90,10 +92,45 @@ export function InGameView({ itemId }: { itemId: string }) {
         </div>
       )}
 
-      {isConnected && !assembly && (
+      {isConnected && itemId && !assembly && (
         <div className="text-center py-12">
           <p className="text-gray-400 text-sm">Loading building data...</p>
           <p className="text-gray-600 text-xs mt-2">Item ID: {itemId}</p>
+        </div>
+      )}
+
+      {/* No specific building — show overview of all protected buildings */}
+      {isConnected && !itemId && (
+        <div className="space-y-4">
+          <div className="border border-gray-800 rounded p-3">
+            <h3 className="text-xs text-orange-500 uppercase font-semibold mb-3">Your Protected Buildings</h3>
+            {protectedBuildings.length === 0 ? (
+              <p className="text-gray-500 text-xs">No buildings with ef guard installed yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {protectedBuildings.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between py-1.5 border-b border-gray-900 last:border-0">
+                    <div>
+                      <span className="text-white text-xs">{displayName(a)}</span>
+                      <span className={`ml-2 text-[10px] uppercase font-semibold ${
+                        a.details?.status === 'ONLINE' ? 'text-green-500' : 'text-red-500'
+                      }`}>{a.details?.status ?? '?'}</span>
+                    </div>
+                    <span className="text-orange-500 text-[10px]">Protected</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {isOwner && (
+            <a
+              href={window.location.origin + window.location.pathname + '#/'}
+              className="inline-block px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs rounded"
+            >
+              Open Admin Panel
+            </a>
+          )}
         </div>
       )}
 
