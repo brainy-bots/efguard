@@ -29,6 +29,7 @@ module ef_guard::condition_attestation {
 
     const EAttestationExpired: u64 = 0;
     const EInvalidSignature:   u64 = 1;
+    const EAttestationFromFuture: u64 = 2;
 
     // ── Types ────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,8 @@ module ef_guard::condition_attestation {
 
         // Check expiry
         let now = clock.timestamp_ms();
+        // Attestation cannot be from the future
+        assert!(timestamp_ms <= now, EAttestationFromFuture);
         let expired = timestamp_ms + condition.max_age_ms < now;
         if (expired) {
             return assembly_binding::new_condition_proof(condition_id, false)

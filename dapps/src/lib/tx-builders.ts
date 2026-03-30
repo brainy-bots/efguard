@@ -196,7 +196,6 @@ export function buildInstallExtensionTx(
   ownerCapVersion: string,
   ownerCapDigest: string,
   config: ExtensionConfig,
-  dappUrl?: string,
 ): Transaction {
   const tx = new Transaction()
 
@@ -236,13 +235,9 @@ export function buildInstallExtensionTx(
     tx.moveCall({ target: `${EFGUARD_PKG}::ssu_extension::share_config`, arguments: [extensionConfig] })
   }
 
-  // Set metadata URL if provided (in the same PTB)
-  if (dappUrl) {
-    tx.moveCall({
-      target: `${EFGUARD_PKG}::assembly_binding::set_metadata_url`,
-      arguments: [tx.object(assemblyId), cap, tx.pure.string(dappUrl)],
-    })
-  }
+  // TODO: metadata URL setting removed — requires a separate transaction
+  // because the OwnerCap is already borrowed in this PTB and the target
+  // function lives in the world package, not ef_guard.
 
   tx.moveCall({
     target: `${WORLD_PKG}::character::return_owner_cap`,

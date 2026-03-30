@@ -419,7 +419,7 @@ export function Overview() {
                       onClick={() => removeEntry(policy.buildingGroupId, entry.id)}
                       className="text-default hover:text-red-400"
                     >
-                      \u00D7
+                      Remove
                     </button>
                   )}
                 </div>

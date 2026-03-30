@@ -1,12 +1,9 @@
 import { useConnection } from '@evefrontier/dapp-kit'
 import { useOwnedAssemblies, displayName } from '../hooks/useOwnedAssemblies'
+import { STATUS_COLORS } from '../types'
 
 const TYPE_LABELS: Record<string, string> = {
   gate: 'Gate', turret: 'Turret', ssu: 'Storage Unit', assembly: 'Assembly', unknown: 'Unknown',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  ONLINE: 'text-green-400', OFFLINE: 'text-red-400', ANCHORED: 'text-yellow-400',
 }
 
 export function Buildings() {

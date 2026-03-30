@@ -2,11 +2,7 @@ import { useState } from 'react'
 import { useConnection } from '@evefrontier/dapp-kit'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
 import { useOwnedAssemblies, displayName, type OwnedAssembly } from '../hooks/useOwnedAssemblies'
-import type { AssemblyType } from '../types'
-
-const STATUS_COLORS: Record<string, string> = {
-  ONLINE: 'text-green-400', OFFLINE: 'text-red-400', ANCHORED: 'text-yellow-400',
-}
+import { STATUS_COLORS, type AssemblyType } from '../types'
 
 function AssemblyLabel({ assembly }: { assembly: OwnedAssembly }) {
   const d = assembly.details

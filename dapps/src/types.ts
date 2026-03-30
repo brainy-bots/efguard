@@ -1,3 +1,9 @@
+// ── Shared UI constants ─────────────────────────────────────────────────────
+
+export const STATUS_COLORS: Record<string, string> = {
+  ONLINE: 'text-green-400', OFFLINE: 'text-red-400', ANCHORED: 'text-yellow-400',
+}
+
 // ── On-chain data shapes ────────────────────────────────────────────────────
 
 export type AssemblyType = 'gate' | 'turret' | 'ssu'
@@ -16,7 +22,7 @@ export type RuleEffect = 'Allow' | 'Deny'
 
 export interface PolicyRule {
   condition_id: string
-  target: RuleTarget   // kept for DApp display (localStorage)
+  target?: RuleTarget   // optional — only present in DApp localStorage, not on-chain
   effect: RuleEffect
 }
 

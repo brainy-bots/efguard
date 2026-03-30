@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
+import { storageKey } from '../lib/storage'
 
-const STORAGE_KEY = 'efguard:indexer-url'
+const STORAGE_KEY = storageKey('indexer-url')
 
 export function useIndexerConfig() {
   const [url, setUrlState] = useState<string | null>(() => {
