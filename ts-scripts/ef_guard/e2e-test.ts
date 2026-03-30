@@ -879,6 +879,103 @@ async function main() {
         }
 
         // ═══════════════════════════════════════════════════════════════
+        // Test 13: Install ef_guard extension on SSU
+        // ═══════════════════════════════════════════════════════════════
+        console.log("\nTest 13: Install ef_guard extension on SSU");
+
+        // Find SSU OwnerCap owned by charA
+        const ssuOwnerCaps = await client.getOwnedObjects({
+            owner: charA,
+            filter: { StructType: `${WORLD}::access::OwnerCap<${WORLD}::storage_unit::StorageUnit>` },
+            limit: 10,
+        });
+
+        let ssuOwnerCapId: string | undefined;
+        for (const obj of ssuOwnerCaps.data) {
+            const detail = await client.getObject({ id: obj.data!.objectId, options: { showContent: true } });
+            const fields = (detail.data?.content as any)?.fields;
+            if (fields?.authorized_object_id === ssu) {
+                ssuOwnerCapId = obj.data!.objectId;
+                break;
+            }
+        }
+
+        if (!ssuOwnerCapId) {
+            skip("SSU OwnerCap not found — skipping SSU extension test");
+        } else {
+            const ssuCapDetail = await client.getObject({ id: ssuOwnerCapId, options: { showContent: true } });
+
+            const tx13 = new Transaction();
+
+            // Borrow OwnerCap from Character
+            const [ssuCap, ssuReceipt] = tx13.moveCall({
+                target: `${WORLD}::character::borrow_owner_cap`,
+                typeArguments: [`${WORLD}::storage_unit::StorageUnit`],
+                arguments: [
+                    tx13.object(charA),
+                    tx13.receivingRef({
+                        objectId: ssuOwnerCapId,
+                        version: ssuCapDetail.data!.version!,
+                        digest: ssuCapDetail.data!.digest!,
+                    }),
+                ],
+            });
+
+            // Authorize ef_guard SSU extension (allow deposit + withdraw)
+            const [ssuConfig] = tx13.moveCall({
+                target: `${PKG}::ssu_extension::authorize_on_ssu`,
+                arguments: [
+                    tx13.object(ssu),
+                    ssuCap,
+                    tx13.pure.bool(true),   // allow_deposit
+                    tx13.pure.bool(true),   // allow_withdraw
+                ],
+            });
+
+            // Share config
+            tx13.moveCall({ target: `${PKG}::ssu_extension::share_config`, arguments: [ssuConfig] });
+
+            // Return OwnerCap
+            tx13.moveCall({
+                target: `${WORLD}::character::return_owner_cap`,
+                typeArguments: [`${WORLD}::storage_unit::StorageUnit`],
+                arguments: [tx13.object(charA), ssuCap, ssuReceipt],
+            });
+
+            const r13 = await client.signAndExecuteTransaction({
+                transaction: tx13, signer: playerACtx.keypair,
+                options: { showEffects: true, showObjectChanges: true },
+            });
+
+            if (r13.effects?.status?.status === "success") {
+                assert(true, "ef_guard SSU extension installed");
+
+                const ssuConfigId = (r13.objectChanges?.find(
+                    (c: any) => c.type === "created" && c.objectType?.includes("SSUExtensionConfig"),
+                ) as any)?.objectId;
+                assert(!!ssuConfigId, `SSUExtensionConfig: ${ssuConfigId}`);
+
+                await delay(DELAY_MS);
+
+                // Verify SSU now has extension
+                const ssuAfterResult = await client.getObject({ id: ssu, options: { showContent: true } });
+                // Check via GraphQL for readable output
+                const ssuGql = await (await fetch("http://127.0.0.1:9125/graphql", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        query: `{ object(address: "${ssu}") { asMoveObject { contents { json } } } }`,
+                    }),
+                })).json();
+                const ssuExt = (ssuGql as any)?.data?.object?.asMoveObject?.contents?.json?.extension;
+                assert(ssuExt !== null && ssuExt !== undefined, "SSU now has extension configured");
+            } else {
+                const err = r13.effects?.status?.error ?? "unknown";
+                assert(false, `SSU extension install failed: ${err}`);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
         // Summary
         // ═══════════════════════════════════════════════════════════════
         console.log("\n══════════════════════════════════════════════════════════");
