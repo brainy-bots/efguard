@@ -499,7 +499,7 @@ export function StorageView({ itemId }: { itemId: string | null }) {
       {/* Footer */}
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderTop: `1px solid ${C.border}` }}>
         <span style={{ color: C.textMuted, fontSize: '9px' }}>Protected by ef guard</span>
-        <img src="./logo-with-text.png" alt="ef guard" style={{ height: '16px', opacity: 0.4 }} />
+        <img src="./logo-with-text.png" alt="ef guard" style={{ height: '28px', opacity: 0.6 }} />
       </div>
     </div>
   )

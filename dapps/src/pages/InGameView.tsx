@@ -272,7 +272,7 @@ export function InGameView({ itemId }: { itemId: string | null }) {
 
       {/* Footer */}
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '8px 16px', borderTop: `1px solid ${C.border}` }}>
-        <img src="./logo-with-text.png" alt="ef guard" style={{ height: '16px', opacity: 0.4 }} />
+        <img src="./logo-with-text.png" alt="ef guard" style={{ height: '28px', opacity: 0.6 }} />
       </div>
     </div>
   )
