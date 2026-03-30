@@ -26,7 +26,7 @@ export function CreateRuleModal({
   onClose: () => void
   onCreate: (label: string, target: RuleTarget) => void
 }) {
-  const [type, setType] = useState<'tribe' | 'character' | 'everyone'>('tribe')
+  const [type, setType] = useState<'tribe' | 'character' | 'everyone' | 'min_balance' | 'token_holder' | 'attestation'>('tribe')
   const [tribeId, setTribeId] = useState('')
   const [tribeName, setTribeName] = useState('')
   const [charId, setCharId] = useState('')
@@ -79,7 +79,8 @@ export function CreateRuleModal({
   function canCreate(): boolean {
     if (type === 'tribe') return !!tribeId
     if (type === 'character') return !!charId.trim() && !!charName && !charNotFound
-    return true // everyone
+    if (type === 'everyone') return true
+    return false // advanced types not yet configurable from DApp
   }
 
   function handleCreate() {
@@ -119,6 +120,11 @@ export function CreateRuleModal({
             <option value="tribe">A Tribe</option>
             <option value="character">A Specific Player</option>
             <option value="everyone">Everyone</option>
+            <optgroup label="Advanced Conditions">
+              <option value="min_balance">Minimum Coin Balance</option>
+              <option value="token_holder">NFT / Token Holder</option>
+              <option value="attestation">Signed Attestation</option>
+            </optgroup>
           </select>
         </div>
 
@@ -210,6 +216,49 @@ export function CreateRuleModal({
           <p className="text-xs" style={{ color: theme.textSecondary }}>
             This rule will match all players. Typically used as a catch-all at the bottom of the list.
           </p>
+        )}
+
+        {type === 'min_balance' && (
+          <div>
+            <label className="text-xs block mb-1" style={{ color: theme.textSecondary }}>Minimum Coin Balance</label>
+            <p className="text-xs mb-2" style={{ color: theme.textMuted }}>
+              Player must hold at least this amount of SUI (or other coin type) to access the building.
+              The player proves ownership by including their coin in the transaction.
+            </p>
+            <div style={{ background: theme.headerBg, border: `1px solid ${theme.border}`, padding: '8px 10px', fontSize: '10px', color: theme.orange }}>
+              This condition is available on-chain but not yet configurable from the DApp.
+              Use the CLI or a custom script to create a MinBalanceCondition.
+            </div>
+          </div>
+        )}
+
+        {type === 'token_holder' && (
+          <div>
+            <label className="text-xs block mb-1" style={{ color: theme.textSecondary }}>NFT / Token Holder</label>
+            <p className="text-xs mb-2" style={{ color: theme.textMuted }}>
+              Player must hold a specific type of Sui object (NFT, membership card, etc.).
+              Works with any token — streamers can gate access to NFT holders, tribes can use membership cards.
+            </p>
+            <div style={{ background: theme.headerBg, border: `1px solid ${theme.border}`, padding: '8px 10px', fontSize: '10px', color: theme.orange }}>
+              This condition is available on-chain but not yet configurable from the DApp.
+              Use the CLI or a custom script to create a TokenHolderCondition.
+            </div>
+          </div>
+        )}
+
+        {type === 'attestation' && (
+          <div>
+            <label className="text-xs block mb-1" style={{ color: theme.textSecondary }}>Signed Attestation</label>
+            <p className="text-xs mb-2" style={{ color: theme.textMuted }}>
+              A trusted server signs an attestation that the player meets certain criteria
+              (inventory totals, reputation, Discord role, etc.). The signature is verified on-chain.
+              Future: replaceable with zero-knowledge proofs for trustless verification.
+            </p>
+            <div style={{ background: theme.headerBg, border: `1px solid ${theme.border}`, padding: '8px 10px', fontSize: '10px', color: theme.orange }}>
+              This condition is available on-chain but not yet configurable from the DApp.
+              Use the CLI or a custom script to create an AttestationCondition.
+            </div>
+          </div>
         )}
 
         <div className="flex justify-end gap-2 pt-2">

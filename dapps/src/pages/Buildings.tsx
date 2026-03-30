@@ -13,7 +13,8 @@ const TYPE_LABELS: Record<string, string> = {
   gate: 'Gate', turret: 'Turret', ssu: 'Smart Storage', assembly: 'Assembly', unknown: 'Unknown',
 }
 
-const DAPP_URL = 'https://brainy-bots.github.io/efguard/#/ingame'
+const DAPP_URL_GATE = 'https://brainy-bots.github.io/efguard/#/ingame'
+const DAPP_URL_SSU  = 'https://brainy-bots.github.io/efguard/#/storage'
 
 function supportsExtension(a: OwnedAssembly): boolean {
   // Turrets excluded — game server controls targeting calls, can't pass custom objects
@@ -92,7 +93,7 @@ export function Buildings() {
     try {
       const tx = new Transaction()
 
-      // Create binding if none exists + register this assembly
+      // Create binding if none exists, then register this assembly
       let bindingObj: ReturnType<typeof tx.moveCall>[0] | null = null
       if (!existingBindingId) {
         const [newBinding] = tx.moveCall({ target: `${EFGUARD_PKG}::assembly_binding::new_binding` })
@@ -101,6 +102,13 @@ export function Buildings() {
         tx.moveCall({
           target: `${EFGUARD_PKG}::assembly_binding::${regFn}`,
           arguments: [newBinding, tx.pure.id(assembly.id)],
+        })
+      } else {
+        // Register assembly in existing binding
+        const regFn = assemblyType === 'gate' ? 'register_gate' : assemblyType === 'turret' ? 'register_turret' : 'register_ssu'
+        tx.moveCall({
+          target: `${EFGUARD_PKG}::assembly_binding::${regFn}`,
+          arguments: [tx.object(existingBindingId), tx.pure.id(assembly.id)],
         })
       }
 
@@ -158,9 +166,10 @@ export function Buildings() {
           ? `${WORLD_PKG}::turret::update_metadata_url`
           : `${WORLD_PKG}::storage_unit::update_metadata_url`
 
+      const dappUrl = assemblyType === 'ssu' ? DAPP_URL_SSU : DAPP_URL_GATE
       tx.moveCall({
         target: updateUrlTarget,
-        arguments: [tx.object(assembly.id), cap, tx.pure.string(DAPP_URL)],
+        arguments: [tx.object(assembly.id), cap, tx.pure.string(dappUrl)],
       })
 
       tx.moveCall({
