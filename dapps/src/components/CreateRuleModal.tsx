@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { RuleTarget } from '../types'
 import { DATAHUB_API_URL } from '../env'
+import { lookupCharacterByGameId } from '../lib/character-lookup'
 
 interface TribeInfo { id: number; name: string; nameShort: string }
 
@@ -28,6 +29,9 @@ export function CreateRuleModal({
   const [tribeId, setTribeId] = useState('')
   const [tribeName, setTribeName] = useState('')
   const [charId, setCharId] = useState('')
+  const [charName, setCharName] = useState<string | null>(null)
+  const [charLooking, setCharLooking] = useState(false)
+  const [charNotFound, setCharNotFound] = useState(false)
   const [tribeQuery, setTribeQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const { data: tribes } = useTribes()
@@ -50,9 +54,30 @@ export function CreateRuleModal({
     ),
   ).slice(0, 10) ?? []
 
+  async function handleCharLookup() {
+    const id = charId.trim()
+    if (!id) return
+    setCharLooking(true)
+    setCharNotFound(false)
+    setCharName(null)
+    try {
+      const result = await lookupCharacterByGameId(id)
+      if (result) {
+        setCharName(result.name || `Player #${id}`)
+        setCharNotFound(false)
+      } else {
+        setCharNotFound(true)
+      }
+    } catch {
+      setCharNotFound(true)
+    } finally {
+      setCharLooking(false)
+    }
+  }
+
   function canCreate(): boolean {
     if (type === 'tribe') return !!tribeId
-    if (type === 'character') return !!charId.trim()
+    if (type === 'character') return !!charId.trim() && !!charName && !charNotFound
     return true // everyone
   }
 
@@ -66,9 +91,9 @@ export function CreateRuleModal({
       target = { type: 'tribe', tribe_id: id }
       label = tribeName || `Tribe #${id}`
     } else if (type === 'character') {
-      if (!charId.trim()) return
+      if (!charId.trim() || !charName) return
       target = { type: 'character', char_game_id: charId.trim() }
-      label = `Character #${charId.trim()}`
+      label = `${charName} (#${charId.trim()})`
     } else {
       target = { type: 'everyone' }
       label = 'Everyone'
@@ -136,16 +161,38 @@ export function CreateRuleModal({
         {type === 'character' && (
           <div>
             <label className="text-xs text-default block mb-1">Player Game ID</label>
-            <input
-              className="w-full bg-surface-2 border border-surface-3 rounded px-2 py-1.5 text-sm text-white font-mono placeholder:text-default focus:outline-none focus:border-accent"
-              placeholder="Numeric game ID (e.g. 811880)"
-              value={charId}
-              onChange={(e) => setCharId(e.target.value)}
-              autoFocus
-            />
-            <p className="text-[10px] text-default mt-1">
-              Find a player's game ID on their profile page or by looking up their wallet on the Debug page.
-            </p>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 bg-surface-2 border border-surface-3 rounded px-2 py-1.5 text-sm text-white font-mono placeholder:text-default focus:outline-none focus:border-accent"
+                placeholder="e.g. 2112080400"
+                value={charId}
+                onChange={(e) => {
+                  setCharId(e.target.value)
+                  setCharName(null)
+                  setCharNotFound(false)
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && handleCharLookup()}
+                autoFocus
+              />
+              <button
+                onClick={handleCharLookup}
+                disabled={!charId.trim() || charLooking}
+                className="px-3 py-1.5 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-50"
+              >
+                {charLooking ? 'Searching...' : 'Verify'}
+              </button>
+            </div>
+            {charName && (
+              <p className="text-xs text-green-400 mt-1">Found: {charName}</p>
+            )}
+            {charNotFound && (
+              <p className="text-xs text-red-400 mt-1">Player not found. Check the ID and try again.</p>
+            )}
+            {!charName && !charNotFound && !charLooking && (
+              <p className="text-[10px] text-default mt-1">
+                Enter the player's game ID and click Verify to confirm they exist.
+              </p>
+            )}
           </div>
         )}
 
