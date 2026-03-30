@@ -39,6 +39,13 @@ export function Buildings() {
   async function handleInstall(assembly: OwnedAssembly) {
     if (!owned?.characterId) return
 
+    if (assembly.details?.extension) {
+      const confirmed = window.confirm(
+        'This building already has an extension installed. Installing ef_guard will replace it. Any existing extension logic will stop working.\n\nContinue?'
+      )
+      if (!confirmed) return
+    }
+
     const charId = owned.characterId
     const assemblyType = assembly.type === 'assembly' ? 'ssu' : assembly.type as AssemblyType
 
