@@ -1,13 +1,13 @@
 /**
  * In-game assembly view — matches EVE Frontier's UI style.
  * Route: #/ingame
+ *
+ * Reads all data from chain (no localStorage dependency), so it works
+ * identically in the in-game browser and regular browsers.
  */
-import { useEffect } from 'react'
-import { useConnection } from '@evefrontier/dapp-kit'
-import { useOwnedAssemblies, displayName } from '../hooks/useOwnedAssemblies'
-import { useRules } from '../hooks/useRules'
-import { usePolicies } from '../hooks/usePolicies'
-import { useBuildingGroups } from '../hooks/useBuildingGroups'
+import { useState, useEffect } from 'react'
+import { useConnection, executeGraphQLQuery } from '@evefrontier/dapp-kit'
+import { EFGUARD_PKG } from '../env'
 import { AsciiBackground } from '../components/AsciiBackground'
 
 const C = {
@@ -23,172 +23,235 @@ const C = {
   red: '#c83030',
 }
 
+const panelStyle = { background: C.panelBg, border: `1px solid ${C.border}`, backdropFilter: 'blur(4px)' }
+const headerStyle = { background: C.headerBg, borderBottom: `1px solid ${C.border}`, color: C.orange, fontSize: '10px', letterSpacing: '0.12em', fontWeight: 700, textTransform: 'uppercase' as const, padding: '6px 10px' }
+const rowStyle = { borderBottom: `1px solid ${C.border}`, padding: '5px 10px', display: 'flex' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const }
+
+// ── Chain data types ────────────────────────────────────────────────────────
+
+interface OnChainRule {
+  conditionId: string
+  effect: 'Allow' | 'Deny'
+  label: string
+}
+
+interface AssemblyInfo {
+  name: string | null
+  description: string | null
+  status: string | null
+  hasExtension: boolean
+}
+
+// ── Chain queries ───────────────────────────────────────────────────────────
+
+async function fetchAssemblyInfo(assemblyId: string): Promise<AssemblyInfo | null> {
+  try {
+    const res = await executeGraphQLQuery<{
+      object: { asMoveObject: { contents: { json: any; type: { repr: string } } } }
+    }>(
+      `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json type { repr } } } } }`,
+      { id: assemblyId },
+    )
+    const json = res.data?.object?.asMoveObject?.contents?.json
+    if (!json) return null
+    const metadata = json.metadata ?? {}
+    return {
+      name: metadata.name ?? null,
+      description: metadata.description ?? null,
+      status: json.status?.is_online ? 'ONLINE' : 'OFFLINE',
+      hasExtension: !!json.extension,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function fetchPoliciesForAssembly(assemblyId: string): Promise<OnChainRule[]> {
+  // Find binding that has this assembly registered
+  const bindingType = `${EFGUARD_PKG}::assembly_binding::AssemblyBinding`
+  const bindingRes = await executeGraphQLQuery<{
+    objects: { nodes: Array<{ address: string; asMoveObject: { contents: { json: any } } }> }
+  }>(
+    `query ($type: String!) { objects(filter: { type: $type }, first: 20) { nodes { address asMoveObject { contents { json } } } } }`,
+    { type: bindingType },
+  )
+
+  const nodes = bindingRes.data?.objects?.nodes ?? []
+  let binding: any = null
+  for (const n of nodes) {
+    const json = n.asMoveObject?.contents?.json
+    if (!json) continue
+    const allIds = [
+      ...(json.gates?.contents ?? []),
+      ...(json.turrets?.contents ?? []),
+      ...(json.storage_units?.contents ?? []),
+    ]
+    if (allIds.includes(assemblyId)) {
+      binding = json
+      break
+    }
+  }
+
+  if (!binding) return []
+
+  // Find policy for this assembly
+  const policies = binding.policies?.contents ?? []
+  const policyEntry = policies.find((p: any) => p.key === assemblyId)
+  if (!policyEntry) return []
+
+  const rules = policyEntry.value?.rules ?? []
+
+  // Resolve condition labels
+  const conditionIds = rules.map((r: any) => r.condition_id).filter(Boolean)
+  const conditionLabels = await resolveConditionLabels(conditionIds)
+
+  return rules.map((r: any) => {
+    const effect = r.effect?.Allow !== undefined ? 'Allow' : 'Deny'
+    return {
+      conditionId: r.condition_id,
+      effect,
+      label: conditionLabels.get(r.condition_id) ?? `Condition ${r.condition_id?.slice(0, 8)}...`,
+    } as OnChainRule
+  })
+}
+
+async function resolveConditionLabels(conditionIds: string[]): Promise<Map<string, string>> {
+  const labels = new Map<string, string>()
+  if (conditionIds.length === 0) return labels
+
+  // Fetch each condition object to determine its type and params
+  for (const id of conditionIds) {
+    try {
+      const res = await executeGraphQLQuery<{
+        object: { asMoveObject: { contents: { json: any; type: { repr: string } } } }
+      }>(
+        `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json type { repr } } } } }`,
+        { id },
+      )
+      const typeRepr = res.data?.object?.asMoveObject?.contents?.type?.repr ?? ''
+      const json = res.data?.object?.asMoveObject?.contents?.json ?? {}
+
+      if (typeRepr.includes('EveryoneCondition')) {
+        labels.set(id, 'Everyone')
+      } else if (typeRepr.includes('TribeCondition')) {
+        labels.set(id, `Tribe #${json.tribe_id ?? '?'}`)
+      } else if (typeRepr.includes('CharacterCondition')) {
+        labels.set(id, `Player #${json.char_game_id ?? '?'}`)
+      } else if (typeRepr.includes('MinBalanceCondition')) {
+        labels.set(id, `Min Balance: ${json.min_amount ?? '?'}`)
+      } else if (typeRepr.includes('TokenHolderCondition')) {
+        labels.set(id, 'Token Holder')
+      } else if (typeRepr.includes('AttestationCondition')) {
+        labels.set(id, 'Signed Attestation')
+      } else {
+        labels.set(id, 'Custom Condition')
+      }
+    } catch {
+      labels.set(id, `Condition ${id.slice(0, 8)}...`)
+    }
+  }
+
+  return labels
+}
+
+// ── Component ───────────────────────────────────────────────────────────────
+
 export function InGameView({ itemId }: { itemId: string | null }) {
-  const { walletAddress, isConnected, handleConnect, hasEveVault } = useConnection()
-  const { data: owned } = useOwnedAssemblies(walletAddress)
-  const { rules } = useRules(walletAddress)
-  const { policies } = usePolicies(walletAddress)
-  const { groups } = useBuildingGroups(walletAddress)
+  const { isConnected, handleConnect, hasEveVault } = useConnection()
+
+  const [assembly, setAssembly] = useState<AssemblyInfo | null>(null)
+  const [rules, setRules] = useState<OnChainRule[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!isConnected && hasEveVault) handleConnect()
   }, [isConnected, hasEveVault, handleConnect])
 
-  const assembly = itemId
-    ? owned?.assemblies.find((a) => a.id === itemId || a.id.includes(itemId))
-    : null
+  useEffect(() => {
+    if (!itemId) { setLoading(false); return }
 
-  const protectedBuildings = owned?.assemblies.filter((a) => !!a.details?.extension) ?? []
-  const isOwner = !!owned && !!walletAddress
+    let cancelled = false
+    setLoading(true)
 
-  const containingGroups = groups.filter((g) =>
-    g.entries.some((e) => e.assemblyId === assembly?.id),
-  )
+    Promise.all([
+      fetchAssemblyInfo(itemId),
+      fetchPoliciesForAssembly(itemId),
+    ]).then(([info, chainRules]) => {
+      if (cancelled) return
+      setAssembly(info)
+      setRules(chainRules)
+    }).catch(console.error).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
 
-  const activeRules = containingGroups.flatMap((g) => {
-    const policy = policies.find((p) => p.buildingGroupId === g.id)
-    if (!policy) return []
-    return policy.entries
-      .filter((e) => e.enabled)
-      .sort((a, b) => a.order - b.order)
-      .map((e) => {
-        const rule = rules.find((r) => r.id === e.ruleId)
-        return { ...e, label: rule?.label ?? 'Unknown', target: rule?.target }
-      })
-  })
-
-  const panelStyle = { background: C.panelBg, border: `1px solid ${C.border}`, backdropFilter: 'blur(4px)' }
-  const headerStyle = { background: C.headerBg, borderBottom: `1px solid ${C.border}`, color: C.orange, fontSize: '10px', letterSpacing: '0.12em', fontWeight: 700, textTransform: 'uppercase' as const, padding: '6px 10px' }
-  const rowStyle = { borderBottom: `1px solid ${C.border}`, padding: '5px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }
-  const labelStyle = { color: C.textSecondary, fontSize: '11px' }
-  const valueStyle = { color: C.textPrimary, fontSize: '11px' }
-  const btnStyle = { background: C.orange, color: '#000', border: 'none', padding: '5px 14px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', cursor: 'pointer' }
+    return () => { cancelled = true }
+  }, [itemId])
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.textPrimary, fontFamily: "'Segoe UI', 'Arial Narrow', Arial, sans-serif", fontSize: '11px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
       <AsciiBackground />
 
-      {/* Center content vertically and horizontally */}
       <div style={{ position: 'relative', zIndex: 1, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 60px' }}>
         <div style={{ width: '100%', maxWidth: '480px' }}>
 
           {/* Loading / not connected */}
           {!isConnected && (
-            <div style={{ ...panelStyle }}>
+            <div style={panelStyle}>
               <div style={{ padding: '20px', color: C.textMuted, textAlign: 'center' }}>Connecting wallet...</div>
             </div>
           )}
 
-          {isConnected && itemId && !assembly && (
-            <div style={{ ...panelStyle }}>
+          {isConnected && loading && (
+            <div style={panelStyle}>
               <div style={{ padding: '20px', color: C.textMuted, textAlign: 'center' }}>Loading building data...</div>
             </div>
           )}
 
-          {/* Overview — no specific building */}
-          {isConnected && !itemId && (
-            <>
-              {protectedBuildings.length === 0 ? (
-                <div style={{ ...panelStyle, minHeight: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: C.textMuted }}>No buildings with ef guard installed.</span>
-                </div>
-              ) : (
-                protectedBuildings.map((a) => {
-                  // Find rules for this specific building
-                  const buildingGroups = groups.filter((g) =>
-                    g.entries.some((e) => e.assemblyId === a.id),
-                  )
-                  const buildingRules = buildingGroups.flatMap((g) => {
-                    const policy = policies.find((p) => p.buildingGroupId === g.id)
-                    if (!policy) return []
-                    return policy.entries
-                      .filter((e) => e.enabled)
-                      .sort((x, y) => x.order - y.order)
-                      .map((e) => {
-                        const rule = rules.find((r) => r.id === e.ruleId)
-                        return { ...e, label: rule?.label ?? 'Unknown' }
-                      })
-                  })
-
-                  return (
-                    <div key={a.id} style={{ marginBottom: 8 }}>
-                      {/* Building header */}
-                      <div style={{ ...panelStyle, minHeight: '80px' }}>
-                        <div style={headerStyle}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>{displayName(a)}</span>
-                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                              <span style={{ color: a.details?.status === 'ONLINE' ? C.green : C.red }}>
-                                {a.details?.status ?? '?'}
-                              </span>
-                              <span style={{ color: C.orange }}>PROTECTED</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Rules for this building */}
-                        {buildingRules.length > 0 ? (
-                          buildingRules.map((r, i) => (
-                            <div key={r.id} style={{ ...rowStyle, ...(i === buildingRules.length - 1 ? { borderBottom: 'none' } : {}) }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ color: C.textMuted, width: '16px' }}>{String(i + 1).padStart(2, '0')}</span>
-                                <span style={valueStyle}>{r.label}</span>
-                              </div>
-                              <span style={{ color: r.effect === 'Allow' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                {r.effect}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <div style={{ padding: '12px 10px', color: C.textMuted }}>No rules configured.</div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </>
+          {/* No itemId */}
+          {isConnected && !itemId && !loading && (
+            <div style={panelStyle}>
+              <div style={headerStyle}>ef guard</div>
+              <div style={{ padding: '20px', color: C.textMuted, textAlign: 'center' }}>
+                This building has ef guard access control installed.
+                Interact with a specific building to see its rules.
+              </div>
+            </div>
           )}
 
-          {/* Specific building view */}
-          {isConnected && assembly && (
+          {/* Building view */}
+          {isConnected && !loading && itemId && (
             <>
+              {/* Building status */}
               <div style={{ ...panelStyle, marginBottom: 8 }}>
-                <div style={headerStyle}>Building Status</div>
-                <div style={rowStyle}>
-                  <span style={labelStyle}>Name</span>
-                  <span style={valueStyle}>{displayName(assembly)}</span>
+                <div style={headerStyle}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{assembly?.name ?? 'Building'}</span>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <span style={{ color: assembly?.status === 'ONLINE' ? C.green : C.red }}>
+                        {assembly?.status ?? '?'}
+                      </span>
+                      {assembly?.hasExtension && (
+                        <span style={{ color: C.orange }}>PROTECTED</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                {assembly.details?.description && (
-                  <div style={rowStyle}>
-                    <span style={labelStyle}>Description</span>
-                    <span style={valueStyle}>{assembly.details.description}</span>
+                {assembly?.description && (
+                  <div style={{ ...rowStyle, borderBottom: 'none' }}>
+                    <span style={{ color: C.textSecondary }}>{assembly.description}</span>
                   </div>
                 )}
-                <div style={rowStyle}>
-                  <span style={labelStyle}>Status</span>
-                  <span style={{ color: assembly.details?.status === 'ONLINE' ? C.green : C.red, fontSize: '11px', fontWeight: 600 }}>
-                    {assembly.details?.status ?? '?'}
-                  </span>
-                </div>
-                <div style={{ ...rowStyle, borderBottom: 'none' }}>
-                  <span style={labelStyle}>Protection</span>
-                  {assembly.details?.extension ? (
-                    <span style={{ color: C.orange, fontWeight: 600 }}>Active</span>
-                  ) : (
-                    <span style={{ color: C.textMuted }}>None</span>
-                  )}
-                </div>
               </div>
 
+              {/* Access rules */}
               <div style={{ ...panelStyle, marginBottom: 8 }}>
                 <div style={headerStyle}>Access Rules</div>
-                {activeRules.length > 0 ? (
-                  activeRules.map((r, i) => (
-                    <div key={r.id} style={{ ...rowStyle, ...(i === activeRules.length - 1 ? { borderBottom: 'none' } : {}) }}>
+                {rules.length > 0 ? (
+                  rules.map((r, i) => (
+                    <div key={r.conditionId} style={{ ...rowStyle, ...(i === rules.length - 1 ? { borderBottom: 'none' } : {}) }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ color: C.textMuted, width: '16px' }}>{String(i + 1).padStart(2, '0')}</span>
-                        <span style={valueStyle}>{r.label}</span>
+                        <span style={{ color: C.textPrimary, fontSize: '11px' }}>{r.label}</span>
                       </div>
                       <span style={{ color: r.effect === 'Allow' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                         {r.effect}
@@ -196,31 +259,19 @@ export function InGameView({ itemId }: { itemId: string | null }) {
                     </div>
                   ))
                 ) : (
-                  <div style={{ padding: '12px 10px', color: C.textMuted }}>No rules configured.</div>
+                  <div style={{ padding: '12px 10px', color: C.textMuted }}>
+                    {assembly?.hasExtension ? 'No rules configured — all access denied by default.' : 'No ef guard extension installed.'}
+                  </div>
                 )}
               </div>
-
-              {isOwner && containingGroups.length > 0 && (
-                <div style={{ marginTop: '4px', color: C.textMuted, fontSize: '10px' }}>
-                  Group: {containingGroups.map((g) => g.name).join(', ')}
-                </div>
-              )}
             </>
           )}
 
         </div>
       </div>
 
-      {/* Footer — fixed at bottom */}
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderTop: `1px solid ${C.border}` }}>
-        {isOwner ? (
-          <a
-            href={window.location.origin + window.location.pathname + '#/'}
-            style={{ ...btnStyle, display: 'inline-block', textDecoration: 'none', fontSize: '9px', padding: '4px 10px' }}
-          >
-            Admin Panel
-          </a>
-        ) : <span />}
+      {/* Footer */}
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '8px 16px', borderTop: `1px solid ${C.border}` }}>
         <img src="./logo-with-text.png" alt="ef guard" style={{ height: '16px', opacity: 0.4 }} />
       </div>
     </div>
