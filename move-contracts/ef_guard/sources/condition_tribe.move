@@ -26,5 +26,7 @@ module ef_guard::condition_tribe {
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
+    public fun id(condition: &TribeCondition): ID { object::id(condition) }
+
     public fun tribe_id(condition: &TribeCondition): u32 { condition.tribe_id }
 }

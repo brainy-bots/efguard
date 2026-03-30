@@ -26,5 +26,7 @@ module ef_guard::condition_character {
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
+    public fun id(condition: &CharacterCondition): ID { object::id(condition) }
+
     public fun char_game_id(condition: &CharacterCondition): u64 { condition.char_game_id }
 }

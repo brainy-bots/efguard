@@ -114,6 +114,8 @@ module ef_guard::condition_attestation {
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
+    public fun id(condition: &AttestationCondition): ID { object::id(condition) }
+
     public fun attestor_pubkey(condition: &AttestationCondition): &vector<u8> {
         &condition.attestor_pubkey
     }

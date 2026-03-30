@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useConnection, executeGraphQLQuery } from '@evefrontier/dapp-kit'
+import { storageKey } from '../lib/storage'
 import { useDAppKit } from '@mysten/dapp-kit-react'
 import { Transaction } from '@mysten/sui/transactions'
 import { useOwnedAssemblies, displayName, type OwnedAssembly } from '../hooks/useOwnedAssemblies'
@@ -35,6 +36,26 @@ export function Buildings() {
   const { data: owned, isLoading } = useOwnedAssemblies(walletAddress)
   const [installing, setInstalling] = useState<string | null>(null)
   const [result, setResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null)
+  const [existingBindingId, setExistingBindingId] = useState<string | null>(null)
+
+  // Auto-discover existing binding
+  useEffect(() => {
+    if (!walletAddress) return
+    const bindingType = `${EFGUARD_PKG}::assembly_binding::AssemblyBinding`
+    executeGraphQLQuery<{
+      objects: { nodes: Array<{ address: string; asMoveObject: { contents: { json: { owner: string } } } }> }
+    }>(
+      `query ($type: String!) { objects(filter: { type: $type }, first: 10) { nodes { address asMoveObject { contents { json } } } } }`,
+      { type: bindingType },
+    ).then((res) => {
+      const bindings = res.data?.objects?.nodes ?? []
+      const mine = bindings.find((b) => b.asMoveObject?.contents?.json?.owner === walletAddress)
+      if (mine) {
+        setExistingBindingId(mine.address)
+        localStorage.setItem(storageKey('binding-id', walletAddress), mine.address)
+      }
+    }).catch(console.error)
+  }, [walletAddress])
 
   async function handleInstall(assembly: OwnedAssembly) {
     if (!owned?.characterId) return
@@ -69,6 +90,18 @@ export function Buildings() {
 
     try {
       const tx = new Transaction()
+
+      // Create binding if none exists + register this assembly
+      let bindingObj: ReturnType<typeof tx.moveCall>[0] | null = null
+      if (!existingBindingId) {
+        const [newBinding] = tx.moveCall({ target: `${EFGUARD_PKG}::assembly_binding::new_binding` })
+        bindingObj = newBinding
+        const regFn = assemblyType === 'gate' ? 'register_gate' : assemblyType === 'turret' ? 'register_turret' : 'register_ssu'
+        tx.moveCall({
+          target: `${EFGUARD_PKG}::assembly_binding::${regFn}`,
+          arguments: [newBinding, tx.pure.id(assembly.id)],
+        })
+      }
 
       const worldTypeMap: Record<string, string> = {
         gate: `${WORLD_PKG}::gate::Gate`,
@@ -135,7 +168,42 @@ export function Buildings() {
         arguments: [tx.object(charId), cap, receipt],
       })
 
-      await dAppKit.signAndExecuteTransaction({ transaction: tx })
+      // Share binding after returning OwnerCap (must be last — moves the object)
+      if (bindingObj) {
+        tx.moveCall({
+          target: `${EFGUARD_PKG}::assembly_binding::share_binding`,
+          arguments: [bindingObj],
+        })
+      }
+
+      const txResult = await dAppKit.signAndExecuteTransaction({ transaction: tx })
+
+      // Extract binding ID from result if we created one
+      if (!existingBindingId) {
+        const r = txResult as any
+        const digest = r?.Transaction?.digest ?? r?.digest ?? ''
+        if (digest) {
+          try {
+            const detail = await dAppKit.getClient().core.getTransaction({
+              digest,
+              include: { effects: true, objectTypes: true },
+            })
+            const txData = (detail as any).Transaction
+            const objectTypes = txData?.objectTypes ?? {}
+            const changedObjects = txData?.effects?.changedObjects ?? []
+            const bindingChange = changedObjects.find((c: any) =>
+              c.idOperation === 'Created' && (objectTypes[c.objectId] ?? '').includes('AssemblyBinding'),
+            )
+            if (bindingChange) {
+              setExistingBindingId(bindingChange.objectId)
+              localStorage.setItem(storageKey('binding-id', walletAddress ?? ''), bindingChange.objectId)
+              console.log('[ef_guard] Binding created:', bindingChange.objectId)
+            }
+          } catch (e) {
+            console.error('[ef_guard] Failed to extract binding ID:', e)
+          }
+        }
+      }
 
       setResult({ id: assembly.id, ok: true, msg: 'ef_guard installed!' })
       await qc.invalidateQueries({ queryKey: ['owned-assemblies'] })

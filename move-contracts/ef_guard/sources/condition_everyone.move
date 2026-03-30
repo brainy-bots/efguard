@@ -21,4 +21,8 @@ module ef_guard::condition_everyone {
     public fun verify(condition: &EveryoneCondition, _ctx: &EvalContext): ConditionProof {
         assembly_binding::new_condition_proof(object::id(condition), true)
     }
+
+    // ── Accessors ────────────────────────────────────────────────────────────
+
+    public fun id(condition: &EveryoneCondition): ID { object::id(condition) }
 }

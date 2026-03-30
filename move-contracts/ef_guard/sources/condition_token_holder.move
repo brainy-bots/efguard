@@ -56,6 +56,8 @@ module ef_guard::condition_token_holder {
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
+    public fun id(condition: &TokenHolderCondition): ID { object::id(condition) }
+
     public fun required_type(condition: &TokenHolderCondition): &TypeName {
         &condition.required_type
     }

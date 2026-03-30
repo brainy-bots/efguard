@@ -1,5 +1,7 @@
-import { useState, useRef } from 'react'
-import { useConnection } from '@evefrontier/dapp-kit'
+import { useState, useRef, useEffect } from 'react'
+import { useConnection, executeGraphQLQuery } from '@evefrontier/dapp-kit'
+import { storageKey } from '../lib/storage'
+import { EFGUARD_PKG } from '../env'
 import { useDAppKit } from '@mysten/dapp-kit-react'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
 import { useRules } from '../hooks/useRules'
@@ -58,12 +60,42 @@ export function Overview() {
     reorderEntries, markClean,
   } = usePolicies(walletAddress)
 
-  const [showRuleModal, setShowRuleModal] = useState<string | null>(null) // buildingGroupId
+  const [showRuleModal, setShowRuleModal] = useState<string | null>(null)
   const [showGroupModal, setShowGroupModal] = useState(false)
   const [applying, setApplying] = useState<string | null>(null)
   const [bindingId, setBindingId] = useState('')
   const [bindingOwner, setBindingOwner] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Auto-discover existing binding: check localStorage first, then chain
+  useEffect(() => {
+    if (!walletAddress || bindingId) return
+
+    // Check localStorage (set by Buildings page on install)
+    const saved = localStorage.getItem(storageKey('binding-id', walletAddress))
+    if (saved) {
+      setBindingId(saved)
+      setBindingOwner(walletAddress)
+      return
+    }
+
+    // Fall back to chain query
+    const bindingType = `${EFGUARD_PKG}::assembly_binding::AssemblyBinding`
+    executeGraphQLQuery<{
+      objects: { nodes: Array<{ address: string; asMoveObject: { contents: { json: { owner: string } } } }> }
+    }>(
+      `query ($type: String!) { objects(filter: { type: $type }, first: 10) { nodes { address asMoveObject { contents { json } } } } }`,
+      { type: bindingType },
+    ).then((res) => {
+      const bindings = res.data?.objects?.nodes ?? []
+      const mine = bindings.find((b) => b.asMoveObject?.contents?.json?.owner === walletAddress)
+      if (mine) {
+        setBindingId(mine.address)
+        setBindingOwner(mine.asMoveObject.contents.json.owner)
+        localStorage.setItem(storageKey('binding-id', walletAddress), mine.address)
+      }
+    }).catch(console.error)
+  }, [walletAddress, bindingId])
   const [visitorTribeId, setVisitorTribeId] = useState<string>('')
   const [visitorCharId, setVisitorCharId] = useState<string>('')
 
@@ -115,7 +147,8 @@ export function Overview() {
     return [...entries].sort((a, b) => a.order - b.order)
   }
 
-  // ── Apply ALL pending changes to chain in one transaction ────────────
+  // ── Apply ALL pending changes to chain ──────────────────────────────
+  // Two transactions if conditions need creating, one if they already exist.
   async function handleApplyAll() {
     const dirtyPolicies = policies.filter((p) => p.dirty)
     if (dirtyPolicies.length === 0) return
@@ -124,79 +157,128 @@ export function Overview() {
     try {
       const { Transaction } = await import('@mysten/sui/transactions')
       const { EFGUARD_PKG } = await import('../env')
-      const tx = new Transaction()
-
-      // Step 1: Create binding if we don't have one
-      let bindingRef: ReturnType<typeof tx.moveCall>[0] | null = null
       let currentBindingId = bindingId.trim()
 
-      if (!currentBindingId) {
-        const [newBinding] = tx.moveCall({ target: `${EFGUARD_PKG}::assembly_binding::new_binding` })
-        bindingRef = newBinding
-
-        // Register all assemblies from all dirty groups
-        const allAssemblyIds = new Set<string>()
-        for (const policy of dirtyPolicies) {
-          const group = groups.find((g) => g.id === policy.buildingGroupId)
-          if (!group) continue
-          for (const entry of group.entries) {
-            allAssemblyIds.add(entry.assemblyId)
-          }
-        }
-
-        for (const assemblyId of allAssemblyIds) {
-          // Find the type from any group that contains this assembly
-          let assemblyType = 'ssu'
-          for (const g of groups) {
-            const e = g.entries.find((e) => e.assemblyId === assemblyId)
-            if (e) { assemblyType = e.assemblyType; break }
-          }
-          const fn = assemblyType === 'gate' ? 'register_gate' : assemblyType === 'turret' ? 'register_turret' : 'register_ssu'
-          tx.moveCall({
-            target: `${EFGUARD_PKG}::assembly_binding::${fn}`,
-            arguments: [newBinding, tx.pure.id(assemblyId)],
-          })
-        }
-      }
-
-      // Step 2: Create condition objects for rules that don't have them
-      const conditionMap = new Map<string, ReturnType<typeof tx.moveCall>[0]>()
+      // Collect rules that need condition objects created
       const rulesNeedingConditions: Array<{ ruleId: string; target: RuleTarget }> = []
-
       for (const policy of dirtyPolicies) {
         for (const entry of sortedEntries(policy.entries).filter((e) => e.enabled)) {
           const rule = getRule(entry.ruleId)
           if (!rule) continue
-          if (!rule.conditionObjectId && !conditionMap.has(rule.id)) {
+          if (!rule.conditionObjectId && !rulesNeedingConditions.some((r) => r.ruleId === rule.id)) {
             rulesNeedingConditions.push({ ruleId: rule.id, target: rule.target })
           }
         }
       }
 
-      for (const { ruleId, target } of rulesNeedingConditions) {
-        let condObj: ReturnType<typeof tx.moveCall>[0]
-        if (target.type === 'tribe') {
-          ;[condObj] = tx.moveCall({
-            target: `${EFGUARD_PKG}::condition_tribe::new`,
-            arguments: [tx.pure.u32(target.tribe_id)],
-          })
-          tx.moveCall({ target: `${EFGUARD_PKG}::condition_tribe::share`, arguments: [condObj] })
-        } else if (target.type === 'character') {
-          ;[condObj] = tx.moveCall({
-            target: `${EFGUARD_PKG}::condition_character::new`,
-            arguments: [tx.pure.u64(target.char_game_id)],
-          })
-          tx.moveCall({ target: `${EFGUARD_PKG}::condition_character::share`, arguments: [condObj] })
-        } else {
-          ;[condObj] = tx.moveCall({
-            target: `${EFGUARD_PKG}::condition_everyone::new`,
-          })
-          tx.moveCall({ target: `${EFGUARD_PKG}::condition_everyone::share`, arguments: [condObj] })
+      // TX1: Create binding (if needed) + conditions (if needed)
+      const needsSetup = !currentBindingId || rulesNeedingConditions.length > 0
+      if (needsSetup) {
+        const tx1 = new Transaction()
+
+        // Create binding if needed
+        if (!currentBindingId) {
+          const [newBinding] = tx1.moveCall({ target: `${EFGUARD_PKG}::assembly_binding::new_binding` })
+
+          // Register all assemblies
+          const allAssemblyIds = new Set<string>()
+          for (const policy of dirtyPolicies) {
+            const group = groups.find((g) => g.id === policy.buildingGroupId)
+            if (!group) continue
+            for (const entry of group.entries) allAssemblyIds.add(entry.assemblyId)
+          }
+          for (const assemblyId of allAssemblyIds) {
+            let assemblyType = 'ssu'
+            for (const g of groups) {
+              const e = g.entries.find((e) => e.assemblyId === assemblyId)
+              if (e) { assemblyType = e.assemblyType; break }
+            }
+            const fn = assemblyType === 'gate' ? 'register_gate' : assemblyType === 'turret' ? 'register_turret' : 'register_ssu'
+            tx1.moveCall({ target: `${EFGUARD_PKG}::assembly_binding::${fn}`, arguments: [newBinding, tx1.pure.id(assemblyId)] })
+          }
+
+          tx1.moveCall({ target: `${EFGUARD_PKG}::assembly_binding::share_binding`, arguments: [newBinding] })
         }
-        conditionMap.set(ruleId, condObj)
+
+        // Create conditions
+        for (const { target } of rulesNeedingConditions) {
+          if (target.type === 'tribe') {
+            const [c] = tx1.moveCall({ target: `${EFGUARD_PKG}::condition_tribe::new`, arguments: [tx1.pure.u32(target.tribe_id)] })
+            tx1.moveCall({ target: `${EFGUARD_PKG}::condition_tribe::share`, arguments: [c] })
+          } else if (target.type === 'character') {
+            const [c] = tx1.moveCall({ target: `${EFGUARD_PKG}::condition_character::new`, arguments: [tx1.pure.u64(target.char_game_id)] })
+            tx1.moveCall({ target: `${EFGUARD_PKG}::condition_character::share`, arguments: [c] })
+          } else {
+            const [c] = tx1.moveCall({ target: `${EFGUARD_PKG}::condition_everyone::new` })
+            tx1.moveCall({ target: `${EFGUARD_PKG}::condition_everyone::share`, arguments: [c] })
+          }
+        }
+
+        const result1 = await dAppKit.signAndExecuteTransaction({ transaction: tx1 })
+        console.log('[ef_guard] TX1 result:', JSON.stringify(result1, null, 2))
+
+        // Extract IDs from TX1 effects — try multiple result formats
+        const r1 = result1 as any
+        const digest = r1?.Transaction?.digest ?? r1?.digest ?? ''
+
+        // Fetch full transaction details with object changes
+        let changes: any[] = []
+        if (digest) {
+          try {
+            const txDetail = await dAppKit.getClient().core.getTransaction({
+              digest,
+              include: { effects: true, objectTypes: true },
+            })
+            const txData = (txDetail as any).Transaction
+            const objectTypes = txData?.objectTypes ?? {}
+            const changedObjects = txData?.effects?.changedObjects ?? []
+            changes = changedObjects
+              .filter((c: any) => c.idOperation === 'Created')
+              .map((c: any) => ({
+                type: 'created',
+                objectId: c.objectId,
+                objectType: objectTypes[c.objectId] ?? '',
+              }))
+            console.log('[ef_guard] TX1 created objects:', changes)
+          } catch (e) {
+            console.error('[ef_guard] Failed to fetch TX1 details:', e)
+          }
+        }
+
+        if (!currentBindingId) {
+          const bc = changes.find((c: any) => c.type === 'created' && c.objectType?.includes('AssemblyBinding'))
+          if (bc) { currentBindingId = bc.objectId; setBindingId(currentBindingId) }
+        }
+
+        // Match conditions to rules (in order of creation)
+        const condTypeMap: Record<string, string> = { tribe: 'TribeCondition', character: 'CharacterCondition', everyone: 'EveryoneCondition' }
+        const createdConds: Record<string, string[]> = { TribeCondition: [], CharacterCondition: [], EveryoneCondition: [] }
+        for (const c of changes) {
+          if (c.type !== 'created') continue
+          for (const typeName of Object.keys(createdConds)) {
+            if (c.objectType?.includes(typeName)) createdConds[typeName].push(c.objectId)
+          }
+        }
+
+        const condCounters: Record<string, number> = { TribeCondition: 0, CharacterCondition: 0, EveryoneCondition: 0 }
+        for (const { ruleId, target } of rulesNeedingConditions) {
+          const typeName = condTypeMap[target.type]
+          const idx = condCounters[typeName]++
+          const objId = createdConds[typeName]?.[idx]
+          if (objId) updateRule(ruleId, { conditionObjectId: objId })
+        }
+
+        // Small delay for shared objects to be available
+        await new Promise((r) => setTimeout(r, 2000))
       }
 
-      // Step 3: Build set_policy calls for each assembly in each dirty group
+      // TX2: Set policies (now all condition IDs are known)
+      if (!currentBindingId) {
+        alert('Failed to create binding')
+        return
+      }
+
+      const tx2 = new Transaction()
       for (const policy of dirtyPolicies) {
         const group = groups.find((g) => g.id === policy.buildingGroupId)
         if (!group) continue
@@ -206,92 +288,35 @@ export function Overview() {
         for (const groupEntry of group.entries) {
           const ruleElements = enabledEntries.map((entry) => {
             const rule = getRule(entry.ruleId)
-            // Use existing condition ID or the one we just created
-            let condId: ReturnType<typeof tx.moveCall>[0] | string
-            if (rule?.conditionObjectId) {
-              condId = rule.conditionObjectId
-            } else if (conditionMap.has(entry.ruleId)) {
-              // Can't use PTB result as pure.id — need to use the object directly
-              // This is a limitation: we'll get the IDs from tx effects after
-              condId = conditionMap.get(entry.ruleId)!
-            } else {
-              return null
-            }
+            const condObjId = rule?.conditionObjectId
+            if (!condObjId) return null
 
-            const [effect] = tx.moveCall({
+            const [effect] = tx2.moveCall({
               target: `${EFGUARD_PKG}::assembly_binding::${entry.effect === 'Allow' ? 'allow' : 'deny'}`,
             })
-
-            // If condId is a string (existing on-chain ID), use pure.id
-            // If it's a tx result (just created), use it directly
-            const condArg = typeof condId === 'string' ? tx.pure.id(condId) : condId
-            const [ruleObj] = tx.moveCall({
+            const [ruleObj] = tx2.moveCall({
               target: `${EFGUARD_PKG}::assembly_binding::rule`,
-              arguments: [condArg, effect],
+              arguments: [tx2.pure.id(condObjId), effect],
             })
             return ruleObj
           }).filter(Boolean)
 
           if (ruleElements.length === 0) continue
 
-          const ruleVec = tx.makeMoveVec({
+          const ruleVec = tx2.makeMoveVec({
             type: `${EFGUARD_PKG}::assembly_binding::Rule`,
             elements: ruleElements as any[],
           })
-
-          const bindArg = currentBindingId ? tx.object(currentBindingId) : bindingRef!
-          tx.moveCall({
+          tx2.moveCall({
             target: `${EFGUARD_PKG}::assembly_binding::set_policy`,
-            arguments: [bindArg, tx.pure.id(groupEntry.assemblyId), ruleVec],
+            arguments: [tx2.object(currentBindingId), tx2.pure.id(groupEntry.assemblyId), ruleVec],
           })
         }
       }
 
-      // Step 4: Share binding if we created it (must be last — moves the object)
-      if (bindingRef && !currentBindingId) {
-        tx.moveCall({
-          target: `${EFGUARD_PKG}::assembly_binding::share_binding`,
-          arguments: [bindingRef],
-        })
-      }
+      await dAppKit.signAndExecuteTransaction({ transaction: tx2 })
 
-      // Execute
-      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx })
-
-      // Step 5: Extract created object IDs from effects
-      const txResult = result as any
-      if (txResult.Transaction) {
-        const changes = txResult.Transaction.objectChanges ?? txResult.objectChanges ?? []
-
-        // Find binding ID if we created one
-        if (!currentBindingId) {
-          const bindingChange = changes.find((c: any) =>
-            c.type === 'created' && c.objectType?.includes('AssemblyBinding'),
-          )
-          if (bindingChange) {
-            currentBindingId = bindingChange.objectId
-            setBindingId(currentBindingId)
-          }
-        }
-
-        // Find condition object IDs and update rules
-        for (const { ruleId, target } of rulesNeedingConditions) {
-          const typeSuffix = target.type === 'tribe' ? 'TribeCondition'
-            : target.type === 'character' ? 'CharacterCondition'
-            : 'EveryoneCondition'
-          const condChange = changes.find((c: any) =>
-            c.type === 'created' && c.objectType?.includes(typeSuffix),
-          )
-          if (condChange) {
-            updateRule(ruleId, { conditionObjectId: condChange.objectId })
-          }
-        }
-      }
-
-      // Mark all dirty policies as clean
-      for (const policy of dirtyPolicies) {
-        markClean(policy.buildingGroupId)
-      }
+      for (const policy of dirtyPolicies) markClean(policy.buildingGroupId)
     } catch (err) {
       console.error('Apply failed:', err)
       alert(`Failed: ${err instanceof Error ? err.message : String(err)}`)

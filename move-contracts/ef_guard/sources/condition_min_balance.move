@@ -52,6 +52,8 @@ module ef_guard::condition_min_balance {
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
+    public fun id(condition: &MinBalanceCondition): ID { object::id(condition) }
+
     public fun min_balance(condition: &MinBalanceCondition): u64 {
         condition.min_balance
     }
