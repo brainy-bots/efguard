@@ -32,7 +32,8 @@ jobs:
       - name: Build
         working-directory: dapps
         env:
-          VITE_TENANT: stillness
+          VITE_TENANT: ${{ vars.VITE_TENANT || 'stillness' }}
+          VITE_EFGUARD_PACKAGE_ID: ${{ vars.VITE_EFGUARD_PACKAGE_ID || '' }}
         run: npx vite build --base /efguard/
 
       - uses: actions/upload-pages-artifact@v3
