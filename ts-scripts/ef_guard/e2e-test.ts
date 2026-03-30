@@ -710,6 +710,175 @@ async function main() {
         assert(r11c.effects?.status?.status === "success", "New owner (Player B) can modify binding");
 
         // ═══════════════════════════════════════════════════════════════
+        // Test 12: Min balance condition (using real SUI coins)
+        // ═══════════════════════════════════════════════════════════════
+        console.log("\nTest 12: Min balance condition with real SUI coins");
+
+        // Wait for previous ownership test to settle
+        await delay(DELAY_MS);
+
+        // Transfer ownership back to admin for this test
+        const txTransferBack = new Transaction();
+        txTransferBack.moveCall({
+            target: `${PKG}::assembly_binding::transfer_ownership`,
+            arguments: [txTransferBack.object(bindingId!), txTransferBack.pure.address(adminCtx.address)],
+        });
+        await client.signAndExecuteTransaction({
+            transaction: txTransferBack, signer: playerBCtx.keypair, options: { showEffects: true },
+        });
+        await delay(DELAY_MS);
+
+        // Create min balance condition: require at least 1 MIST (very low — should pass)
+        const tx12a = new Transaction();
+        const [lowBalanceCond] = tx12a.moveCall({
+            target: `${PKG}::condition_min_balance::new`,
+            arguments: [tx12a.pure.u64(1n)], // 1 MIST
+        });
+        tx12a.moveCall({ target: `${PKG}::condition_min_balance::share`, arguments: [lowBalanceCond] });
+
+        // Create high balance condition: require 999999 SUI (way too high — should fail)
+        const [highBalanceCond] = tx12a.moveCall({
+            target: `${PKG}::condition_min_balance::new`,
+            arguments: [tx12a.pure.u64(999999000000000n)], // 999999 SUI in MIST
+        });
+        tx12a.moveCall({ target: `${PKG}::condition_min_balance::share`, arguments: [highBalanceCond] });
+
+        const r12a = await client.signAndExecuteTransaction({
+            transaction: tx12a, signer: adminCtx.keypair,
+            options: { showEffects: true, showObjectChanges: true },
+        });
+        assert(r12a.effects?.status?.status === "success", "Balance conditions created");
+
+        const lowBalanceCondId = (r12a.objectChanges?.find(
+            (c: any) => c.type === "created" && c.objectType?.includes("MinBalanceCondition") && c.objectId < "0x9",
+        ) as any)?.objectId ?? (r12a.objectChanges?.filter(
+            (c: any) => c.type === "created" && c.objectType?.includes("MinBalanceCondition"),
+        ) as any)?.[0]?.objectId;
+
+        const highBalanceCondId = (r12a.objectChanges?.filter(
+            (c: any) => c.type === "created" && c.objectType?.includes("MinBalanceCondition"),
+        ) as any)?.[1]?.objectId;
+
+        assert(!!lowBalanceCondId, `Low balance condition: ${lowBalanceCondId}`);
+        assert(!!highBalanceCondId, `High balance condition: ${highBalanceCondId}`);
+        await delay(DELAY_MS);
+
+        // Set SSU policy: low balance → Allow (should pass for anyone with SUI)
+        const tx12b = new Transaction();
+        const [br1] = tx12b.moveCall({
+            target: `${PKG}::assembly_binding::rule`,
+            arguments: [tx12b.pure.id(lowBalanceCondId!), tx12b.moveCall({ target: `${PKG}::assembly_binding::allow` })[0]],
+        });
+        const ssuBalanceRules = tx12b.makeMoveVec({ type: `${PKG}::assembly_binding::Rule`, elements: [br1] });
+        tx12b.moveCall({
+            target: `${PKG}::assembly_binding::set_policy`,
+            arguments: [tx12b.object(bindingId!), tx12b.pure.id(ssu), ssuBalanceRules],
+        });
+        const r12b = await client.signAndExecuteTransaction({
+            transaction: tx12b, signer: adminCtx.keypair, options: { showEffects: true },
+        });
+        assert(r12b.effects?.status?.status === "success", "SSU policy: low balance → Allow");
+        await delay(DELAY_MS);
+
+        // Get Player A's coin object
+        const playerACoins = await client.getCoins({ owner: playerACtx.address, coinType: "0x2::sui::SUI", limit: 1 });
+        const playerACoinId = playerACoins.data[0]?.coinObjectId;
+        assert(!!playerACoinId, `Player A has SUI coin: ${playerACoinId}`);
+
+        // Test: low threshold → Allow (Player A has plenty of SUI)
+        if (playerACoinId) {
+            const tx12c = new Transaction();
+            const [evalCtx12] = tx12c.moveCall({
+                target: `${PKG}::assembly_binding::build_eval_context`,
+                arguments: [
+                    tx12c.object(bindingId!), tx12c.pure.id(ssu),
+                    tx12c.pure.u64(BigInt(GAME_CHARACTER_ID)), tx12c.pure.u32(100),
+                    tx12c.pure.address(playerACtx.address),
+                ],
+            });
+            const [balProof] = tx12c.moveCall({
+                target: `${PKG}::condition_min_balance::verify`,
+                typeArguments: ["0x2::sui::SUI"],
+                arguments: [tx12c.object(lowBalanceCondId!), evalCtx12, tx12c.object(playerACoinId)],
+            });
+            const proofs12 = tx12c.makeMoveVec({
+                type: `${PKG}::assembly_binding::ConditionProof`,
+                elements: [balProof],
+            });
+            const [decision12] = tx12c.moveCall({
+                target: `${PKG}::assembly_binding::resolve_role`,
+                arguments: [tx12c.object(bindingId!), tx12c.pure.id(ssu), tx12c.pure.u64(BigInt(GAME_CHARACTER_ID)), proofs12],
+            });
+            tx12c.moveCall({ target: `${PKG}::assembly_binding::is_allow`, arguments: [decision12] });
+
+            const r12c = await client.devInspectTransactionBlock({
+                sender: playerACtx.address, transactionBlock: tx12c,
+            });
+            const lastIdx12 = (r12c.results?.length ?? 0) - 1;
+            const isAllow12 = r12c.results?.[lastIdx12]?.returnValues?.[0]?.[0]?.[0] === 1;
+            assert(isAllow12 === true, "Low balance threshold (1 MIST) → Allow (player has SUI)");
+        }
+
+        // Now change policy to high threshold → should Deny
+        const tx12d = new Transaction();
+        const [br2] = tx12d.moveCall({
+            target: `${PKG}::assembly_binding::rule`,
+            arguments: [tx12d.pure.id(highBalanceCondId!), tx12d.moveCall({ target: `${PKG}::assembly_binding::allow` })[0]],
+        });
+        const [br3] = tx12d.moveCall({
+            target: `${PKG}::assembly_binding::rule`,
+            arguments: [tx12d.pure.id(everyoneCondId!), tx12d.moveCall({ target: `${PKG}::assembly_binding::deny` })[0]],
+        });
+        const ssuHighRules = tx12d.makeMoveVec({ type: `${PKG}::assembly_binding::Rule`, elements: [br2, br3] });
+        tx12d.moveCall({
+            target: `${PKG}::assembly_binding::set_policy`,
+            arguments: [tx12d.object(bindingId!), tx12d.pure.id(ssu), ssuHighRules],
+        });
+        const r12d = await client.signAndExecuteTransaction({
+            transaction: tx12d, signer: adminCtx.keypair, options: { showEffects: true },
+        });
+        assert(r12d.effects?.status?.status === "success", "SSU policy: high balance → Allow, Everyone → Deny");
+        await delay(DELAY_MS);
+
+        // Test: high threshold → Deny (Player A doesn't have 999999 SUI)
+        if (playerACoinId) {
+            const tx12e = new Transaction();
+            const [evalCtx12e] = tx12e.moveCall({
+                target: `${PKG}::assembly_binding::build_eval_context`,
+                arguments: [
+                    tx12e.object(bindingId!), tx12e.pure.id(ssu),
+                    tx12e.pure.u64(BigInt(GAME_CHARACTER_ID)), tx12e.pure.u32(100),
+                    tx12e.pure.address(playerACtx.address),
+                ],
+            });
+            const [balProofHigh] = tx12e.moveCall({
+                target: `${PKG}::condition_min_balance::verify`,
+                typeArguments: ["0x2::sui::SUI"],
+                arguments: [tx12e.object(highBalanceCondId!), evalCtx12e, tx12e.object(playerACoinId)],
+            });
+            const [evProofHigh] = tx12e.moveCall({
+                target: `${PKG}::condition_everyone::verify`,
+                arguments: [tx12e.object(everyoneCondId!), evalCtx12e],
+            });
+            const proofs12e = tx12e.makeMoveVec({
+                type: `${PKG}::assembly_binding::ConditionProof`,
+                elements: [balProofHigh, evProofHigh],
+            });
+            const [decision12e] = tx12e.moveCall({
+                target: `${PKG}::assembly_binding::resolve_role`,
+                arguments: [tx12e.object(bindingId!), tx12e.pure.id(ssu), tx12e.pure.u64(BigInt(GAME_CHARACTER_ID)), proofs12e],
+            });
+            tx12e.moveCall({ target: `${PKG}::assembly_binding::is_deny`, arguments: [decision12e] });
+
+            const r12e = await client.devInspectTransactionBlock({
+                sender: playerACtx.address, transactionBlock: tx12e,
+            });
+            const lastIdx12e = (r12e.results?.length ?? 0) - 1;
+            const isDeny12 = r12e.results?.[lastIdx12e]?.returnValues?.[0]?.[0]?.[0] === 1;
+            assert(isDeny12 === true, "High balance threshold (999999 SUI) → Deny (insufficient funds)");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
         // Summary
         // ═══════════════════════════════════════════════════════════════
         console.log("\n══════════════════════════════════════════════════════════");
