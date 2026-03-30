@@ -62,7 +62,7 @@ export function InGameView({ itemId }: { itemId: string }) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
-          <span className="text-orange-500 font-bold text-sm tracking-wider uppercase">ef_guard</span>
+          <span className="text-orange-500 font-bold text-sm tracking-wider uppercase">ef guard</span>
           {assembly && (
             <span className="text-gray-400 text-xs">
               {displayName(assembly)}
@@ -187,7 +187,7 @@ export function InGameView({ itemId }: { itemId: string }) {
 
       {/* Footer */}
       <div className="mt-8 text-center">
-        <span className="text-gray-700 text-[10px]">ef_guard access control middleware</span>
+        <span className="text-gray-700 text-[10px]">ef guard access control middleware</span>
       </div>
     </div>
   )
