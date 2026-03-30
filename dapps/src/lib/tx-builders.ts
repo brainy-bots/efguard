@@ -1,27 +1,51 @@
 import { Transaction } from '@mysten/sui/transactions'
-import type { AssemblyType, RuleTarget, RuleEffect, PolicyRule, ExtensionConfig } from '../types'
+import type { AssemblyType, RuleEffect, ExtensionConfig } from '../types'
 import { EFGUARD_PKG, WORLD_PKG } from '../env'
 
-// ── Rule construction helpers ───────────────────────────────────────────────
+// ── Condition creation ─────────────────────────────────────────────────────
 
-function buildTarget(tx: Transaction, target: RuleTarget) {
-  if (target.type === 'tribe') {
-    const [t] = tx.moveCall({
-      target: `${EFGUARD_PKG}::assembly_binding::tribe`,
-      arguments: [tx.pure.u32(target.tribe_id)],
-    })
-    return t
-  }
-  if (target.type === 'character') {
-    const [t] = tx.moveCall({
-      target: `${EFGUARD_PKG}::assembly_binding::character`,
-      arguments: [tx.pure.u64(target.char_game_id)],
-    })
-    return t
-  }
-  const [t] = tx.moveCall({ target: `${EFGUARD_PKG}::assembly_binding::everyone` })
-  return t
+/** Create and share a TribeCondition (shared object). */
+export function buildCreateTribeConditionTx(tribeId: number): Transaction {
+  const tx = new Transaction()
+  const [condition] = tx.moveCall({
+    target: `${EFGUARD_PKG}::condition_tribe::new`,
+    arguments: [tx.pure.u32(tribeId)],
+  })
+  tx.moveCall({
+    target: `${EFGUARD_PKG}::condition_tribe::share`,
+    arguments: [condition],
+  })
+  return tx
 }
+
+/** Create and share a CharacterCondition (shared object). */
+export function buildCreateCharacterConditionTx(charGameId: string): Transaction {
+  const tx = new Transaction()
+  const [condition] = tx.moveCall({
+    target: `${EFGUARD_PKG}::condition_character::new`,
+    arguments: [tx.pure.u64(charGameId)],
+  })
+  tx.moveCall({
+    target: `${EFGUARD_PKG}::condition_character::share`,
+    arguments: [condition],
+  })
+  return tx
+}
+
+/** Create and share an EveryoneCondition (shared object). */
+export function buildCreateEveryoneConditionTx(): Transaction {
+  const tx = new Transaction()
+  const [condition] = tx.moveCall({
+    target: `${EFGUARD_PKG}::condition_everyone::new`,
+  })
+  tx.moveCall({
+    target: `${EFGUARD_PKG}::condition_everyone::share`,
+    arguments: [condition],
+  })
+  return tx
+}
+
+// ── Rule construction helpers ───────────────────────────────────────────────
 
 function buildEffect(tx: Transaction, effect: RuleEffect) {
   const fn = effect === 'Allow' ? 'allow' : 'deny'
@@ -29,12 +53,11 @@ function buildEffect(tx: Transaction, effect: RuleEffect) {
   return e
 }
 
-function buildRule(tx: Transaction, rule: PolicyRule) {
-  const target = buildTarget(tx, rule.target)
-  const effect = buildEffect(tx, rule.effect)
+function buildRule(tx: Transaction, conditionId: string, effect: RuleEffect) {
+  const eff = buildEffect(tx, effect)
   const [r] = tx.moveCall({
     target: `${EFGUARD_PKG}::assembly_binding::rule`,
-    arguments: [target, effect],
+    arguments: [tx.pure.id(conditionId), eff],
   })
   return r
 }
@@ -47,7 +70,7 @@ function buildRule(tx: Transaction, rule: PolicyRule) {
  */
 export function buildSetupTx(
   assemblies: Array<{ id: string; type: AssemblyType }>,
-  policies?: Array<{ assemblyId: string; rules: PolicyRule[] }>,
+  policies?: Array<{ assemblyId: string; rules: Array<{ conditionId: string; effect: RuleEffect }> }>,
 ): Transaction {
   const tx = new Transaction()
 
@@ -68,7 +91,7 @@ export function buildSetupTx(
       if (rules.length === 0) continue
       const ruleVec = tx.makeMoveVec({
         type: `${EFGUARD_PKG}::assembly_binding::Rule`,
-        elements: rules.map((r) => buildRule(tx, r)),
+        elements: rules.map((r) => buildRule(tx, r.conditionId, r.effect)),
       })
       tx.moveCall({
         target: `${EFGUARD_PKG}::assembly_binding::set_policy`,
@@ -89,12 +112,12 @@ export function buildSetupTx(
 export function buildSetPolicyTx(
   bindingId: string,
   assemblyId: string,
-  rules: PolicyRule[],
+  rules: Array<{ conditionId: string; effect: RuleEffect }>,
 ): Transaction {
   const tx = new Transaction()
   const ruleVec = tx.makeMoveVec({
     type: `${EFGUARD_PKG}::assembly_binding::Rule`,
-    elements: rules.map((r) => buildRule(tx, r)),
+    elements: rules.map((r) => buildRule(tx, r.conditionId, r.effect)),
   })
   tx.moveCall({
     target: `${EFGUARD_PKG}::assembly_binding::set_policy`,
@@ -107,14 +130,14 @@ export function buildSetPolicyTx(
 export function buildAddRuleTx(
   bindingId: string,
   assemblyId: string,
-  rule: PolicyRule,
+  conditionId: string,
+  effect: RuleEffect,
 ): Transaction {
   const tx = new Transaction()
-  const target = buildTarget(tx, rule.target)
-  const effect = buildEffect(tx, rule.effect)
+  const eff = buildEffect(tx, effect)
   tx.moveCall({
     target: `${EFGUARD_PKG}::assembly_binding::add_rule`,
-    arguments: [tx.object(bindingId), tx.pure.id(assemblyId), target, effect],
+    arguments: [tx.object(bindingId), tx.pure.id(assemblyId), tx.pure.id(conditionId), eff],
   })
   return tx
 }
@@ -173,6 +196,7 @@ export function buildInstallExtensionTx(
   ownerCapVersion: string,
   ownerCapDigest: string,
   config: ExtensionConfig,
+  dappUrl?: string,
 ): Transaction {
   const tx = new Transaction()
 
@@ -210,6 +234,14 @@ export function buildInstallExtensionTx(
       arguments: [tx.object(assemblyId), cap, tx.pure.bool(config.allow_deposit ?? true), tx.pure.bool(config.allow_withdraw ?? false)],
     })
     tx.moveCall({ target: `${EFGUARD_PKG}::ssu_extension::share_config`, arguments: [extensionConfig] })
+  }
+
+  // Set metadata URL if provided (in the same PTB)
+  if (dappUrl) {
+    tx.moveCall({
+      target: `${EFGUARD_PKG}::assembly_binding::set_metadata_url`,
+      arguments: [tx.object(assemblyId), cap, tx.pure.string(dappUrl)],
+    })
   }
 
   tx.moveCall({

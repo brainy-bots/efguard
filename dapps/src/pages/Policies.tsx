@@ -56,7 +56,7 @@ export function Policies() {
     } else {
       target = { type: 'everyone' }
     }
-    return { target, effect }
+    return { condition_id: '', target, effect }
   }
 
   const rule = buildRule()
@@ -73,8 +73,11 @@ export function Policies() {
 
     // For each assembly in the building group, append the rule to its existing policy
     for (const entry of validEntries) {
-      const existing = binding?.policies[entry.assemblyId]?.rules ?? []
-      const newRules = [...existing, rule]
+      const existing = (binding?.policies[entry.assemblyId]?.rules ?? []).map((r) => ({
+        conditionId: r.condition_id,
+        effect: r.effect,
+      }))
+      const newRules = [...existing, { conditionId: rule.condition_id, effect: rule.effect }]
       await submit(buildSetPolicyTx(bindingId, entry.assemblyId, newRules))
     }
     await qc.invalidateQueries({ queryKey: ['assembly-binding'] })

@@ -38,7 +38,7 @@ export function RuleList({ rules, readOnly, isPending, onAddRule, onRemoveRule }
     } else {
       target = { type: 'everyone' }
     }
-    onAddRule({ target, effect: addEffect })
+    onAddRule({ condition_id: '', target, effect: addEffect })
     setAddValue('')
   }
 

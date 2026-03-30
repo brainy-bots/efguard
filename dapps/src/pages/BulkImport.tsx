@@ -5,7 +5,7 @@ import { useAssemblyBinding } from '../hooks/useAssemblyBinding'
 import { useSubmitTransaction } from '../hooks/useSubmitTransaction'
 import { buildSetPolicyTx } from '../lib/tx-builders'
 import { DEFAULT_BINDING_ID } from '../env'
-import type { PolicyRule, RuleEffect } from '../types'
+import type { RuleEffect } from '../types'
 
 interface ParsedEntry {
   value: string
@@ -50,9 +50,14 @@ export function BulkImport() {
     if (!bindingId || !selectedAssemblyId || validEntries.length === 0) return
 
     // Build rules: existing + new tribe rules
-    const existing = binding?.policies[selectedAssemblyId]?.rules ?? []
-    const newRules: PolicyRule[] = validEntries.map((e) => ({
-      target: { type: 'tribe' as const, tribe_id: e.parsed! },
+    // Note: bulk import creates rules with placeholder condition IDs.
+    // Users should create shared condition objects first and use their IDs.
+    const existing = (binding?.policies[selectedAssemblyId]?.rules ?? []).map((r) => ({
+      conditionId: r.condition_id,
+      effect: r.effect,
+    }))
+    const newRules = validEntries.map((_e) => ({
+      conditionId: '', // TODO: requires condition object IDs — create conditions first
       effect,
     }))
     const combined = [...existing, ...newRules]

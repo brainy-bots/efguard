@@ -11,6 +11,8 @@ export interface SavedRule {
   target: RuleTarget
   /** Cached display label — tribe name, character ID, or "Everyone" */
   label: string
+  /** On-chain shared condition object ID (set after condition is created) */
+  conditionObjectId?: string
 }
 
 const STORAGE_KEY = 'efguard-rules'

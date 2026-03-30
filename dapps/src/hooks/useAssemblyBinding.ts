@@ -51,6 +51,7 @@ export function useAssemblyBinding(bindingId: string | null) {
         const rules: PolicyRule[] = rulesRaw.map((r) => {
           const rule = r.json
           return {
+            condition_id: String(rule['condition_id'] ?? ''),
             target: parseRuleTarget(rule['target']),
             effect: (String(rule['effect']) === 'Allow' ? 'Allow' : 'Deny') as RuleEffect,
           }

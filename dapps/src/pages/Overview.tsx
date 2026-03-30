@@ -6,9 +6,44 @@ import { useRules } from '../hooks/useRules'
 import { usePolicies, type PolicyEntry } from '../hooks/usePolicies'
 import { useOwnedAssemblies, displayName } from '../hooks/useOwnedAssemblies'
 // tx-builders used inline in handleApply
-import type { RuleTarget, PolicyRule } from '../types'
+import type { RuleTarget, RuleEffect } from '../types'
 import { CreateRuleModal } from '../components/CreateRuleModal'
 import { CreateBuildingGroupModal } from '../components/CreateBuildingGroupModal'
+import { HelpPanel } from '../components/HelpPanel'
+
+// ── Visitor access evaluation (client-side preview) ─────────────────────────
+
+interface AccessResult {
+  effect: RuleEffect
+  matchedRuleLabel: string
+}
+
+function evaluateAccess(
+  visitorTribeId: number | null,
+  visitorCharId: string | null,
+  entries: PolicyEntry[],
+  getRule: (id: string) => { target: RuleTarget; label: string } | undefined,
+): AccessResult | null {
+  const sorted = [...entries].filter((e) => e.enabled).sort((a, b) => a.order - b.order)
+
+  for (const entry of sorted) {
+    const rule = getRule(entry.ruleId)
+    if (!rule) continue
+
+    const { target } = rule
+    if (target.type === 'everyone') {
+      return { effect: entry.effect, matchedRuleLabel: rule.label }
+    }
+    if (target.type === 'tribe' && visitorTribeId !== null && target.tribe_id === visitorTribeId) {
+      return { effect: entry.effect, matchedRuleLabel: rule.label }
+    }
+    if (target.type === 'character' && visitorCharId !== null && target.char_game_id === visitorCharId) {
+      return { effect: entry.effect, matchedRuleLabel: rule.label }
+    }
+  }
+
+  return null // no matching rule
+}
 
 export function Overview() {
   const { walletAddress, isConnected } = useConnection()
@@ -26,10 +61,15 @@ export function Overview() {
   const [showGroupModal, setShowGroupModal] = useState(false)
   const [applying, setApplying] = useState<string | null>(null)
   const [bindingId, setBindingId] = useState('')
+  const [bindingOwner, setBindingOwner] = useState('')
+  const [visitorTribeId, setVisitorTribeId] = useState<string>('')
+  const [visitorCharId, setVisitorCharId] = useState<string>('')
 
   // Drag state
   const dragItem = useRef<{ groupId: string; entryId: string } | null>(null)
   const dragOver = useRef<string | null>(null)
+
+  const isOwner = !bindingOwner || (!!walletAddress && bindingOwner === walletAddress)
 
   function getRule(ruleId: string) {
     return rules.find((r) => r.id === ruleId)
@@ -60,15 +100,18 @@ export function Overview() {
     const group = groups.find((g) => g.id === buildingGroupId)
     if (!group) return
 
-    // Build the enabled rules in order
+    // Build the enabled rules in order (condition-based API)
     const enabledEntries = sortedEntries(policy.entries).filter((e) => e.enabled)
-    const chainRules: PolicyRule[] = enabledEntries
-      .map((e) => {
-        const target = getRuleTarget(e.ruleId)
-        if (!target) return null
-        return { target, effect: e.effect } as PolicyRule
-      })
-      .filter(Boolean) as PolicyRule[]
+    const chainRules: Array<{ conditionId: string; effect: RuleEffect }> = []
+
+    for (const entry of enabledEntries) {
+      const rule = getRule(entry.ruleId)
+      if (!rule?.conditionObjectId) {
+        alert(`Rule "${rule?.label ?? entry.ruleId}" has no condition object ID. Create the condition on-chain first.`)
+        return
+      }
+      chainRules.push({ conditionId: rule.conditionObjectId, effect: entry.effect })
+    }
 
     setApplying(buildingGroupId)
     try {
@@ -77,32 +120,13 @@ export function Overview() {
       const batchTx = new Transaction()
 
       for (const entry of group.entries) {
-        // Build rule vector for this assembly
         const ruleElements = chainRules.map((r) => {
-          let target: ReturnType<typeof batchTx.moveCall>[0]
-          if (r.target.type === 'tribe') {
-            ;[target] = batchTx.moveCall({
-              target: `${EFGUARD_PKG}::assembly_binding::tribe`,
-              arguments: [batchTx.pure.u32(r.target.tribe_id)],
-            })
-          } else if (r.target.type === 'character') {
-            ;[target] = batchTx.moveCall({
-              target: `${EFGUARD_PKG}::assembly_binding::character`,
-              arguments: [batchTx.pure.u64(r.target.char_game_id)],
-            })
-          } else {
-            ;[target] = batchTx.moveCall({
-              target: `${EFGUARD_PKG}::assembly_binding::everyone`,
-            })
-          }
-
           const [effect] = batchTx.moveCall({
             target: `${EFGUARD_PKG}::assembly_binding::${r.effect === 'Allow' ? 'allow' : 'deny'}`,
           })
-
           const [rule] = batchTx.moveCall({
             target: `${EFGUARD_PKG}::assembly_binding::rule`,
-            arguments: [target, effect],
+            arguments: [batchTx.pure.id(r.conditionId), effect],
           })
           return rule
         })
@@ -173,6 +197,10 @@ export function Overview() {
   const managedGroupIds = new Set(policies.map((p) => p.buildingGroupId))
   const unmanagedGroups = groups.filter((g) => !managedGroupIds.has(g.id))
 
+  // Parse visitor IDs for access preview
+  const parsedVisitorTribe = visitorTribeId ? parseInt(visitorTribeId, 10) : null
+  const parsedVisitorChar = visitorCharId || null
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -187,6 +215,81 @@ export function Overview() {
           />
         </div>
       </div>
+
+      {/* Owner field */}
+      <div className="flex items-center gap-2 text-xs">
+        <label className="text-default">Binding owner:</label>
+        <input
+          className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-64 text-xs focus:outline-none focus:border-accent"
+          placeholder="0x... (leave blank if you are the owner)"
+          value={bindingOwner}
+          onChange={(e) => setBindingOwner(e.target.value)}
+        />
+        {bindingOwner && !isOwner && (
+          <span className="text-yellow-400 text-[10px]">Read-only (visitor)</span>
+        )}
+      </div>
+
+      {/* Visitor access check (shown when not owner) */}
+      {!isOwner && (
+        <div className="bg-surface-1 border border-surface-3 rounded-lg p-4 space-y-3">
+          <h2 className="text-xs font-semibold text-default uppercase tracking-wider">Check your access</h2>
+          <div className="flex items-center gap-3 text-xs">
+            <label className="text-default">Your tribe ID:</label>
+            <input
+              className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-32 text-xs focus:outline-none focus:border-accent"
+              placeholder="e.g. 42"
+              value={visitorTribeId}
+              onChange={(e) => setVisitorTribeId(e.target.value)}
+            />
+            <label className="text-default">Your char game ID:</label>
+            <input
+              className="bg-surface-2 border border-surface-3 rounded px-2 py-1 text-white font-mono w-40 text-xs focus:outline-none focus:border-accent"
+              placeholder="e.g. 123456"
+              value={visitorCharId}
+              onChange={(e) => setVisitorCharId(e.target.value)}
+            />
+          </div>
+
+          {(parsedVisitorTribe !== null || parsedVisitorChar) && policies.length > 0 && (
+            <div className="space-y-2">
+              {policies.map((policy) => {
+                const group = groups.find((g) => g.id === policy.buildingGroupId)
+                const groupName = group?.name ?? 'Unknown group'
+                const result = evaluateAccess(
+                  parsedVisitorTribe,
+                  parsedVisitorChar,
+                  policy.entries,
+                  (id) => getRule(id),
+                )
+
+                return (
+                  <div key={policy.buildingGroupId} className="flex items-center gap-3 text-xs">
+                    <span className="text-white">{groupName}:</span>
+                    {result ? (
+                      <>
+                        <span className={`px-2 py-0.5 rounded font-semibold text-[10px] uppercase ${
+                          result.effect === 'Allow'
+                            ? 'bg-green-900/50 text-green-400'
+                            : 'bg-red-900/50 text-red-400'
+                        }`}>
+                          {result.effect === 'Allow' ? 'Allowed' : 'Denied'}
+                        </span>
+                        <span className="text-default">matched: {result.matchedRuleLabel}</span>
+                      </>
+                    ) : (
+                      <span className="text-default">No matching rule (default deny)</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Help panel (collapsed by default) */}
+      <HelpPanel />
 
       {/* Policy sections per building group */}
       {policies.map((policy) => {
@@ -204,36 +307,38 @@ export function Overview() {
                 <h2 className="text-sm font-semibold text-white">{groupName}</h2>
                 <p className="text-xs text-default">{assemblyCount} building{assemblyCount !== 1 ? 's' : ''}</p>
               </div>
-              <div className="flex items-center gap-2">
-                {policy.dirty && (
-                  <span className="text-xs text-yellow-400">unsaved</span>
-                )}
-                <button
-                  onClick={() => handleApply(policy.buildingGroupId)}
-                  disabled={!policy.dirty || isApplying || !bindingId.trim()}
-                  className="px-3 py-1 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-30"
-                >
-                  {isApplying ? 'Applying…' : 'Apply'}
-                </button>
-                <button
-                  onClick={() => removeGroupPolicy(policy.buildingGroupId)}
-                  className="text-xs text-default hover:text-red-400"
-                >
-                  Remove
-                </button>
-              </div>
+              {isOwner && (
+                <div className="flex items-center gap-2">
+                  {policy.dirty && (
+                    <span className="text-xs text-yellow-400">unsaved</span>
+                  )}
+                  <button
+                    onClick={() => handleApply(policy.buildingGroupId)}
+                    disabled={!policy.dirty || isApplying || !bindingId.trim()}
+                    className="px-3 py-1 bg-accent hover:bg-accent-dim text-white text-xs rounded disabled:opacity-30"
+                  >
+                    {isApplying ? 'Applying...' : 'Apply'}
+                  </button>
+                  <button
+                    onClick={() => removeGroupPolicy(policy.buildingGroupId)}
+                    className="text-xs text-default hover:text-red-400"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Rule entries */}
             <div className="p-4 space-y-1">
               {sorted.length === 0 && (
-                <p className="text-xs text-default">No rules. Add one below.</p>
+                <p className="text-xs text-default">No rules. {isOwner ? 'Add one below.' : ''}</p>
               )}
 
               {sorted.map((entry, i) => (
                 <div
                   key={entry.id}
-                  draggable
+                  draggable={isOwner}
                   onDragStart={() => handleDragStart(policy.buildingGroupId, entry.id)}
                   onDragEnter={() => handleDragEnter(entry.id)}
                   onDragEnd={() => handleDragEnd(policy.buildingGroupId)}
@@ -244,8 +349,8 @@ export function Overview() {
                       : 'bg-surface-2/40 opacity-50'
                   }`}
                 >
-                  {/* Drag handle */}
-                  <span className="cursor-grab text-default select-none">⠿</span>
+                  {/* Drag handle (owner only) */}
+                  {isOwner && <span className="cursor-grab text-default select-none">&#x2807;</span>}
 
                   {/* Priority number */}
                   <span className="text-default w-4 text-center">{i + 1}</span>
@@ -261,90 +366,116 @@ export function Overview() {
                     <span className={entry.enabled ? 'text-white' : 'text-default'}>
                       {getRuleLabel(entry.ruleId)}
                     </span>
+                    {/* Show condition object status */}
+                    {(() => {
+                      const rule = getRule(entry.ruleId)
+                      if (!rule?.conditionObjectId) {
+                        return <span className="text-orange-400 text-[10px]" title="No condition object ID set">(no condition)</span>
+                      }
+                      return null
+                    })()}
                   </span>
 
-                  {/* Effect toggle */}
-                  <button
-                    onClick={() => setEffect(
-                      policy.buildingGroupId,
-                      entry.id,
-                      entry.effect === 'Allow' ? 'Deny' : 'Allow',
-                    )}
-                    className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                  {/* Effect toggle (owner) / Effect display (visitor) */}
+                  {isOwner ? (
+                    <button
+                      onClick={() => setEffect(
+                        policy.buildingGroupId,
+                        entry.id,
+                        entry.effect === 'Allow' ? 'Deny' : 'Allow',
+                      )}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                        entry.effect === 'Allow'
+                          ? 'bg-green-900/50 text-green-400 hover:bg-green-900'
+                          : 'bg-red-900/50 text-red-400 hover:bg-red-900'
+                      }`}
+                    >
+                      {entry.effect}
+                    </button>
+                  ) : (
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
                       entry.effect === 'Allow'
-                        ? 'bg-green-900/50 text-green-400 hover:bg-green-900'
-                        : 'bg-red-900/50 text-red-400 hover:bg-red-900'
-                    }`}
-                  >
-                    {entry.effect}
-                  </button>
+                        ? 'bg-green-900/50 text-green-400'
+                        : 'bg-red-900/50 text-red-400'
+                    }`}>
+                      {entry.effect}
+                    </span>
+                  )}
 
-                  {/* Enable/disable toggle */}
-                  <button
-                    onClick={() => toggleEntry(policy.buildingGroupId, entry.id)}
-                    className="text-default hover:text-white"
-                    title={entry.enabled ? 'Disable' : 'Enable'}
-                  >
-                    {entry.enabled ? '●' : '○'}
-                  </button>
+                  {/* Enable/disable toggle (owner only) */}
+                  {isOwner && (
+                    <button
+                      onClick={() => toggleEntry(policy.buildingGroupId, entry.id)}
+                      className="text-default hover:text-white"
+                      title={entry.enabled ? 'Disable' : 'Enable'}
+                    >
+                      {entry.enabled ? '\u25CF' : '\u25CB'}
+                    </button>
+                  )}
 
-                  {/* Remove */}
-                  <button
-                    onClick={() => removeEntry(policy.buildingGroupId, entry.id)}
-                    className="text-default hover:text-red-400"
-                  >
-                    ×
-                  </button>
+                  {/* Remove (owner only) */}
+                  {isOwner && (
+                    <button
+                      onClick={() => removeEntry(policy.buildingGroupId, entry.id)}
+                      className="text-default hover:text-red-400"
+                    >
+                      \u00D7
+                    </button>
+                  )}
                 </div>
               ))}
 
-              {/* Add rule */}
-              <div className="flex items-center gap-2 pt-2">
-                <select
-                  className="flex-1 bg-surface-2 border border-surface-3 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent"
-                  defaultValue=""
-                  onChange={(e) => {
-                    if (e.target.value === '__new__') {
-                      setShowRuleModal(policy.buildingGroupId)
-                    } else if (e.target.value) {
-                      addEntry(policy.buildingGroupId, e.target.value, 'Allow')
-                    }
-                    e.target.value = ''
-                  }}
-                >
-                  <option value="" disabled>+ Add rule…</option>
-                  {rules.map((r) => (
-                    <option key={r.id} value={r.id}>{r.label}</option>
-                  ))}
-                  <option value="__new__">Create new rule…</option>
-                </select>
-              </div>
+              {/* Add rule (owner only) */}
+              {isOwner && (
+                <div className="flex items-center gap-2 pt-2">
+                  <select
+                    className="flex-1 bg-surface-2 border border-surface-3 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent"
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value === '__new__') {
+                        setShowRuleModal(policy.buildingGroupId)
+                      } else if (e.target.value) {
+                        addEntry(policy.buildingGroupId, e.target.value, 'Allow')
+                      }
+                      e.target.value = ''
+                    }}
+                  >
+                    <option value="" disabled>+ Add rule...</option>
+                    {rules.map((r) => (
+                      <option key={r.id} value={r.id}>{r.label}</option>
+                    ))}
+                    <option value="__new__">Create new rule...</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
         )
       })}
 
-      {/* Add building group */}
-      <div className="flex items-center gap-2">
-        <select
-          className="flex-1 bg-surface-1 border border-surface-3 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-accent"
-          defaultValue=""
-          onChange={(e) => {
-            if (e.target.value === '__new__') {
-              setShowGroupModal(true)
-            } else if (e.target.value) {
-              addGroupPolicy(e.target.value)
-            }
-            e.target.value = ''
-          }}
-        >
-          <option value="" disabled>+ Add building group…</option>
-          {unmanagedGroups.map((g) => (
-            <option key={g.id} value={g.id}>{g.name} ({g.entries.length} buildings)</option>
-          ))}
-          <option value="__new__">Create new building group…</option>
-        </select>
-      </div>
+      {/* Add building group (owner only) */}
+      {isOwner && (
+        <div className="flex items-center gap-2">
+          <select
+            className="flex-1 bg-surface-1 border border-surface-3 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-accent"
+            defaultValue=""
+            onChange={(e) => {
+              if (e.target.value === '__new__') {
+                setShowGroupModal(true)
+              } else if (e.target.value) {
+                addGroupPolicy(e.target.value)
+              }
+              e.target.value = ''
+            }}
+          >
+            <option value="" disabled>+ Add building group...</option>
+            {unmanagedGroups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name} ({g.entries.length} buildings)</option>
+            ))}
+            <option value="__new__">Create new building group...</option>
+          </select>
+        </div>
+      )}
 
       {/* Unassigned buildings */}
       {owned && owned.assemblies.length > 0 && (

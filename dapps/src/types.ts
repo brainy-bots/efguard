@@ -15,7 +15,8 @@ export type RuleTarget =
 export type RuleEffect = 'Allow' | 'Deny'
 
 export interface PolicyRule {
-  target: RuleTarget
+  condition_id: string
+  target: RuleTarget   // kept for DApp display (localStorage)
   effect: RuleEffect
 }
 

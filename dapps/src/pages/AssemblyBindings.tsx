@@ -256,7 +256,7 @@ function AssemblyPolicySection({
   const [expanded, setExpanded] = useState(false)
 
   async function handleAddRule(rule: PolicyRule) {
-    await submit(buildAddRuleTx(bindingId, assemblyId, rule))
+    await submit(buildAddRuleTx(bindingId, assemblyId, rule.condition_id, rule.effect))
     await qc.invalidateQueries({ queryKey: ['assembly-binding'] })
   }
 
