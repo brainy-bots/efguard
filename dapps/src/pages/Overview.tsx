@@ -159,17 +159,31 @@ export function Overview() {
       const { EFGUARD_PKG } = await import('../env')
       let currentBindingId = bindingId.trim()
 
-      // Collect rules that need condition objects created
+      // Re-read rules from localStorage to get latest conditionObjectIds
+      // (React state may be stale if updateRule was called in a previous Apply)
+      const freshRules: Record<string, typeof rules[0]> = {}
+      try {
+        const stored = JSON.parse(localStorage.getItem(storageKey('rules', walletAddress ?? undefined)) || '[]')
+        for (const r of stored) freshRules[r.id] = r
+      } catch { /* ignore */ }
+
+      // Build map of all ruleId → conditionObjectId
+      const conditionIdMap = new Map<string, string>()
       const rulesNeedingConditions: Array<{ ruleId: string; target: RuleTarget }> = []
       for (const policy of dirtyPolicies) {
         for (const entry of sortedEntries(policy.entries).filter((e) => e.enabled)) {
-          const rule = getRule(entry.ruleId)
+          const rule = freshRules[entry.ruleId] ?? getRule(entry.ruleId)
           if (!rule) continue
-          if (!rule.conditionObjectId && !rulesNeedingConditions.some((r) => r.ruleId === rule.id)) {
+          if (rule.conditionObjectId) {
+            conditionIdMap.set(rule.id, rule.conditionObjectId)
+          } else if (!rulesNeedingConditions.some((r) => r.ruleId === rule.id)) {
             rulesNeedingConditions.push({ ruleId: rule.id, target: rule.target })
           }
         }
       }
+
+      console.log('[ef_guard] Existing condition IDs:', Object.fromEntries(conditionIdMap))
+      console.log('[ef_guard] Rules needing conditions:', rulesNeedingConditions.map(r => r.ruleId))
 
       // TX1: Create binding (if needed) + conditions (if needed)
       const needsSetup = !currentBindingId || rulesNeedingConditions.length > 0
@@ -260,19 +274,27 @@ export function Overview() {
           }
         }
 
+        // Add newly created condition IDs from TX1 to the map
         const condCounters: Record<string, number> = { TribeCondition: 0, CharacterCondition: 0, EveryoneCondition: 0 }
         for (const { ruleId, target } of rulesNeedingConditions) {
           const typeName = condTypeMap[target.type]
           const idx = condCounters[typeName]++
           const objId = createdConds[typeName]?.[idx]
-          if (objId) updateRule(ruleId, { conditionObjectId: objId })
+          if (objId) {
+            conditionIdMap.set(ruleId, objId)
+            updateRule(ruleId, { conditionObjectId: objId }) // save to localStorage for future
+          }
         }
+
+        console.log('[ef_guard] Condition ID map:', Object.fromEntries(conditionIdMap))
 
         // Small delay for shared objects to be available
         await new Promise((r) => setTimeout(r, 2000))
       }
 
-      // TX2: Set policies (now all condition IDs are known)
+      console.log('[ef_guard] Final condition ID map:', Object.fromEntries(conditionIdMap))
+
+      // TX2: Set policies using the local conditionIdMap
       if (!currentBindingId) {
         alert('Failed to create binding')
         return
@@ -287,9 +309,12 @@ export function Overview() {
 
         for (const groupEntry of group.entries) {
           const ruleElements = enabledEntries.map((entry) => {
-            const rule = getRule(entry.ruleId)
-            const condObjId = rule?.conditionObjectId
-            if (!condObjId) return null
+            // Use local map first, fall back to rule's stored ID
+            const condObjId = conditionIdMap.get(entry.ruleId) ?? getRule(entry.ruleId)?.conditionObjectId
+            if (!condObjId) {
+              console.warn('[ef_guard] No condition ID for rule:', entry.ruleId)
+              return null
+            }
 
             const [effect] = tx2.moveCall({
               target: `${EFGUARD_PKG}::assembly_binding::${entry.effect === 'Allow' ? 'allow' : 'deny'}`,
