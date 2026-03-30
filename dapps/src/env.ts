@@ -28,9 +28,6 @@ export const DEFAULT_BINDING_ID = optionalEnv('VITE_DEFAULT_BINDING_ID')
 export const SUI_RPC_URL       = optionalEnv('VITE_SUI_RPC_URL', 'https://fullnode.testnet.sui.io')
 export const NETWORK            = optionalEnv('VITE_NETWORK', 'testnet')
 
-// Also set VITE_EVE_WORLD_PACKAGE_ID for dapp-kit internals
-// (dapp-kit reads this directly via import.meta.env)
-if (!import.meta.env.VITE_EVE_WORLD_PACKAGE_ID) {
-  // @ts-ignore — setting env at runtime for dapp-kit
-  import.meta.env.VITE_EVE_WORLD_PACKAGE_ID = WORLD_PKG
-}
+// VITE_EVE_WORLD_PACKAGE_ID must be set at build time for dapp-kit internals.
+// The GitHub Actions workflow and .env file should set it.
+// If not set, dapp-kit's getCharacterPlayerProfileType() etc. will throw.
