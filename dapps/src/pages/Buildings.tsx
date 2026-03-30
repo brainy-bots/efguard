@@ -11,7 +11,7 @@ const TYPE_LABELS: Record<string, string> = {
   gate: 'Gate', turret: 'Turret', ssu: 'Smart Storage', assembly: 'Assembly', unknown: 'Unknown',
 }
 
-const DAPP_URL = 'https://brainy-bots.github.io/efguard/'
+const DAPP_URL = 'https://brainy-bots.github.io/efguard/#/ingame'
 
 function supportsExtension(a: OwnedAssembly): boolean {
   return ['gate', 'turret', 'ssu'].includes(a.type)
