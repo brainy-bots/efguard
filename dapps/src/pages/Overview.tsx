@@ -300,7 +300,42 @@ export function Overview() {
         return
       }
 
+      // Fetch binding to check which assemblies are already registered
+      let registeredAssemblies = new Set<string>()
+      try {
+        const bindingRes = await executeGraphQLQuery<{
+          object: { asMoveObject: { contents: { json: any } } }
+        }>(
+          `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json } } } }`,
+          { id: currentBindingId },
+        )
+        const bJson = bindingRes.data?.object?.asMoveObject?.contents?.json ?? {}
+        for (const arr of [bJson.gates?.contents, bJson.turrets?.contents, bJson.storage_units?.contents]) {
+          if (Array.isArray(arr)) arr.forEach((id: string) => registeredAssemblies.add(id))
+        }
+      } catch (e) {
+        console.warn('[ef_guard] Could not fetch binding registrations:', e)
+      }
+
       const tx2 = new Transaction()
+
+      // Register any unregistered assemblies before setting policies
+      for (const policy of dirtyPolicies) {
+        const group = groups.find((g) => g.id === policy.buildingGroupId)
+        if (!group) continue
+        for (const entry of group.entries) {
+          if (!registeredAssemblies.has(entry.assemblyId)) {
+            const fn = entry.assemblyType === 'gate' ? 'register_gate' : entry.assemblyType === 'turret' ? 'register_turret' : 'register_ssu'
+            tx2.moveCall({
+              target: `${EFGUARD_PKG}::assembly_binding::${fn}`,
+              arguments: [tx2.object(currentBindingId), tx2.pure.id(entry.assemblyId)],
+            })
+            registeredAssemblies.add(entry.assemblyId) // avoid duplicates in same TX
+            console.log('[ef_guard] Registering assembly:', entry.assemblyId, 'as', entry.assemblyType)
+          }
+        }
+      }
+
       for (const policy of dirtyPolicies) {
         const group = groups.find((g) => g.id === policy.buildingGroupId)
         if (!group) continue
