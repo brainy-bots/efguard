@@ -280,4 +280,4 @@ ef_guard is the access control toolkit that every other toolkit builds on.
 
 ## License
 
-MIT
+AGPL-3.0 — see [LICENSE](./LICENSE). Commercial licensing available on request.
