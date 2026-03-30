@@ -49,13 +49,13 @@ export function Overview() {
   const { walletAddress, isConnected } = useConnection()
   const dAppKit = useDAppKit()
   const { data: owned } = useOwnedAssemblies(walletAddress)
-  const { groups } = useBuildingGroups()
-  const { rules, createRule } = useRules()
+  const { groups } = useBuildingGroups(walletAddress)
+  const { rules, createRule } = useRules(walletAddress)
   const {
     policies, addGroupPolicy, removeGroupPolicy,
     addEntry, removeEntry, toggleEntry, setEffect,
     reorderEntries, markClean,
-  } = usePolicies()
+  } = usePolicies(walletAddress)
 
   const [showRuleModal, setShowRuleModal] = useState<string | null>(null) // buildingGroupId
   const [showGroupModal, setShowGroupModal] = useState(false)

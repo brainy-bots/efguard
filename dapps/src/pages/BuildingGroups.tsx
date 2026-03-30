@@ -63,7 +63,7 @@ function AssemblyPicker({
 
 export function BuildingGroups() {
   const { walletAddress, isConnected } = useConnection()
-  const { groups, createGroup, deleteGroup, addEntry, removeEntry } = useBuildingGroups()
+  const { groups, createGroup, deleteGroup, addEntry, removeEntry } = useBuildingGroups(walletAddress)
   const { data: owned, isLoading: ownedLoading } = useOwnedAssemblies(walletAddress)
   const [newName, setNewName] = useState('')
   const [pickerOpen, setPickerOpen] = useState<string | null>(null)

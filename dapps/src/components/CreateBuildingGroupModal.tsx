@@ -12,7 +12,7 @@ export function CreateBuildingGroupModal({
   onCreate: (groupId: string) => void
 }) {
   const { walletAddress } = useConnection()
-  const { createGroup, addEntry } = useBuildingGroups()
+  const { createGroup, addEntry } = useBuildingGroups(walletAddress)
   const { data: owned } = useOwnedAssemblies(walletAddress)
   const [name, setName] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())

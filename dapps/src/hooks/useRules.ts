@@ -1,58 +1,57 @@
-/**
- * Access rules stored in localStorage.
- * A rule defines "who" — a tribe, a character, or everyone.
- * Display label is derived from the target (tribe name from datahub, or character game ID).
- */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { RuleTarget } from '../types'
+import { storageKey } from '../lib/storage'
 
 export interface SavedRule {
   id: string
   target: RuleTarget
-  /** Cached display label — tribe name, character ID, or "Everyone" */
   label: string
-  /** On-chain shared condition object ID (set after condition is created) */
   conditionObjectId?: string
 }
 
-const STORAGE_KEY = 'efguard-rules'
+function getKey(wallet?: string) { return storageKey('rules', wallet) }
 
-function load(): SavedRule[] {
+function load(wallet?: string): SavedRule[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    return JSON.parse(localStorage.getItem(getKey(wallet)) || '[]')
   } catch {
     return []
   }
 }
 
-function save(rules: SavedRule[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
+function save(rules: SavedRule[], wallet?: string) {
+  localStorage.setItem(getKey(wallet), JSON.stringify(rules))
 }
 
 export function ruleLabel(rule: SavedRule): string {
   return rule.label
 }
 
-export function useRules() {
-  const [rules, setRules] = useState<SavedRule[]>(load)
+export function useRules(walletAddress?: string | null) {
+  const wallet = walletAddress ?? undefined
+  const [rules, setRules] = useState<SavedRule[]>(() => load(wallet))
+
+  useEffect(() => {
+    setRules(load(wallet))
+  }, [wallet])
 
   const createRule = useCallback((label: string, target: RuleTarget): SavedRule => {
     const rule: SavedRule = { id: crypto.randomUUID(), target, label }
     setRules((prev) => {
       const next = [...prev, rule]
-      save(next)
+      save(next, wallet)
       return next
     })
     return rule
-  }, [])
+  }, [wallet])
 
   const deleteRule = useCallback((id: string) => {
     setRules((prev) => {
       const next = prev.filter((r) => r.id !== id)
-      save(next)
+      save(next, wallet)
       return next
     })
-  }, [])
+  }, [wallet])
 
   return { rules, createRule, deleteRule }
 }

@@ -9,11 +9,11 @@ import { DEFAULT_BINDING_ID } from '../env'
 import type { RuleEffect, RuleTarget, PolicyRule } from '../types'
 
 export function Policies() {
-  const { isConnected } = useConnection()
+  const { isConnected, walletAddress } = useConnection()
   const qc = useQueryClient()
   const { submit, isPending } = useSubmitTransaction()
 
-  const { groups: buildingGroups } = useBuildingGroups()
+  const { groups: buildingGroups } = useBuildingGroups(walletAddress)
 
   const [bindingIdInput, setBindingIdInput] = useState(DEFAULT_BINDING_ID || '')
   const [bindingId, setBindingId] = useState(DEFAULT_BINDING_ID || null)
