@@ -107,11 +107,6 @@ export function InGameView({ itemId }: { itemId: string | null }) {
                 )}
               </div>
 
-              {isOwner && (
-                <a href={window.location.origin + window.location.pathname + '#/'} style={{ ...btnStyle, display: 'inline-block', textDecoration: 'none' }}>
-                  Admin Panel
-                </a>
-              )}
             </>
           )}
 
@@ -165,24 +160,9 @@ export function InGameView({ itemId }: { itemId: string | null }) {
                 )}
               </div>
 
-              {isOwner && (
-                <div style={{ ...panelStyle }}>
-                  <div style={headerStyle}>Management</div>
-                  <div style={{ padding: '8px 10px' }}>
-                    {containingGroups.length > 0 && (
-                      <div style={{ marginBottom: '8px', color: C.textSecondary, fontSize: '11px' }}>
-                        Group: {containingGroups.map((g) => g.name).join(', ')}
-                      </div>
-                    )}
-                    <a
-                      href={window.location.origin + window.location.pathname + '#/'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ ...btnStyle, display: 'inline-block', textDecoration: 'none' }}
-                    >
-                      Admin Panel
-                    </a>
-                  </div>
+              {isOwner && containingGroups.length > 0 && (
+                <div style={{ marginTop: '4px', color: C.textMuted, fontSize: '10px' }}>
+                  Group: {containingGroups.map((g) => g.name).join(', ')}
                 </div>
               )}
             </>
@@ -191,8 +171,18 @@ export function InGameView({ itemId }: { itemId: string | null }) {
         </div>
       </div>
 
-      {/* Footer — fixed at bottom, centered */}
-      <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', padding: '8px', borderTop: `1px solid ${C.border}` }}>
+      {/* Footer — fixed at bottom */}
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderTop: `1px solid ${C.border}` }}>
+        {isOwner ? (
+          <a
+            href={window.location.origin + window.location.pathname + '#/'}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ ...btnStyle, display: 'inline-block', textDecoration: 'none', fontSize: '9px', padding: '4px 10px' }}
+          >
+            Admin Panel
+          </a>
+        ) : <span />}
         <span style={{ color: C.textMuted, fontSize: '9px', letterSpacing: '0.15em' }}>EF GUARD // ACCESS CONTROL MIDDLEWARE</span>
       </div>
     </div>
