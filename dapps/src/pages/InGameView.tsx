@@ -216,8 +216,6 @@ export function InGameView({ itemId }: { itemId: string | null }) {
         {isOwner ? (
           <a
             href={window.location.origin + window.location.pathname + '#/'}
-            target="_blank"
-            rel="noopener noreferrer"
             style={{ ...btnStyle, display: 'inline-block', textDecoration: 'none', fontSize: '9px', padding: '4px 10px' }}
           >
             Admin Panel
