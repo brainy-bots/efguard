@@ -306,6 +306,7 @@ async function main() {
         // ═══════════════════════════════════════════════════════════════
         // Blocklist: add Player A, verify denied
         // ═══════════════════════════════════════════════════════════════
+        await delay(DELAY_MS);
         console.log("\nBlocklist test");
 
         const tx4 = new Transaction();
@@ -329,6 +330,168 @@ async function main() {
         await delay(DELAY_MS);
 
         assert(await checkRole(BigInt(GAME_CHARACTER_ID), 100, gate1) === "allow", "Unblocklisted → Allow again");
+
+        // ═══════════════════════════════════════════════════════════════
+        // Denied player tries request_permit → EAccessDenied
+        await delay(DELAY_MS);
+        // Change policy: only Character A allowed, everyone else denied
+        // ═══════════════════════════════════════════════════════════════
+        console.log("\nDenied player interaction test");
+
+        // Create a character condition for Player A only
+        const txCharCond = new Transaction();
+        const [charCond] = txCharCond.moveCall({
+            target: `${PKG}::condition_character::new`,
+            arguments: [txCharCond.pure.u64(BigInt(GAME_CHARACTER_ID))],
+        });
+        txCharCond.moveCall({ target: `${PKG}::condition_character::share`, arguments: [charCond] });
+        const rCharCond = await client.signAndExecuteTransaction({
+            transaction: txCharCond, signer: playerACtx.keypair,
+            options: { showEffects: true, showObjectChanges: true },
+        });
+        assert(rCharCond.effects?.status?.status === "success", "Character condition created");
+        const charCondId = (rCharCond.objectChanges?.find((c: any) =>
+            c.type === "created" && c.objectType?.includes("CharacterCondition"),
+        ) as any)?.objectId;
+        assert(!!charCondId, `CharacterCondition: ${charCondId}`);
+        await delay(DELAY_MS);
+
+        // Set policy: Character A → Allow, Everyone → Deny
+        const txNewPolicy = new Transaction();
+        const [ae1] = txNewPolicy.moveCall({ target: `${PKG}::assembly_binding::allow` });
+        const [nr1] = txNewPolicy.moveCall({
+            target: `${PKG}::assembly_binding::rule`,
+            arguments: [txNewPolicy.pure.id(charCondId!), ae1],
+        });
+        const [de1] = txNewPolicy.moveCall({ target: `${PKG}::assembly_binding::deny` });
+        const [nr2] = txNewPolicy.moveCall({
+            target: `${PKG}::assembly_binding::rule`,
+            arguments: [txNewPolicy.pure.id(everyoneCondId!), de1],
+        });
+        const newRules = txNewPolicy.makeMoveVec({ type: `${PKG}::assembly_binding::Rule`, elements: [nr1, nr2] });
+        txNewPolicy.moveCall({
+            target: `${PKG}::assembly_binding::set_policy`,
+            arguments: [txNewPolicy.object(bindingId!), txNewPolicy.pure.id(gate1), newRules],
+        });
+        const rNewPolicy = await client.signAndExecuteTransaction({
+            transaction: txNewPolicy, signer: playerACtx.keypair,
+            options: { showEffects: true },
+        });
+        assert(rNewPolicy.effects?.status?.status === "success", "Policy changed: only Character A allowed");
+        await delay(DELAY_MS);
+
+        // Verify: Player A still allowed
+        if (configId) {
+            const txAllow = new Transaction();
+            const [ecA] = txAllow.moveCall({
+                target: `${PKG}::assembly_binding::build_eval_context`,
+                arguments: [txAllow.object(bindingId!), txAllow.pure.id(gate1), txAllow.pure.u64(BigInt(GAME_CHARACTER_ID)), txAllow.pure.u32(100), txAllow.pure.address(playerACtx.address)],
+            });
+            const [cpA] = txAllow.moveCall({ target: `${PKG}::condition_character::verify`, arguments: [txAllow.object(charCondId!), ecA] });
+            const [epA] = txAllow.moveCall({ target: `${PKG}::condition_everyone::verify`, arguments: [txAllow.object(everyoneCondId!), ecA] });
+            const proofsA = txAllow.makeMoveVec({ type: `${PKG}::assembly_binding::ConditionProof`, elements: [cpA, epA] });
+            txAllow.moveCall({
+                target: `${PKG}::gate_extension::request_permit`,
+                arguments: [txAllow.object(configId), txAllow.object(bindingId!), proofsA, txAllow.object(gate1), txAllow.object(gate2), txAllow.object(charA), txAllow.object("0x6")],
+            });
+            const rAllow = await client.signAndExecuteTransaction({
+                transaction: txAllow, signer: playerACtx.keypair,
+                options: { showEffects: true },
+            });
+            assert(rAllow.effects?.status?.status === "success", "Player A: still gets JumpPermit (character rule)");
+        }
+
+        // Player B tries to request permit → should be DENIED
+        if (configId) {
+            const charB = deriveObjectId(registry, 900000001n, WORLD);
+
+            const txDeny = new Transaction();
+            const [ecB] = txDeny.moveCall({
+                target: `${PKG}::assembly_binding::build_eval_context`,
+                arguments: [txDeny.object(bindingId!), txDeny.pure.id(gate1), txDeny.pure.u64(900000001n), txDeny.pure.u32(100), txDeny.pure.address(playerBCtx.address)],
+            });
+            const [cpB] = txDeny.moveCall({ target: `${PKG}::condition_character::verify`, arguments: [txDeny.object(charCondId!), ecB] });
+            const [epB] = txDeny.moveCall({ target: `${PKG}::condition_everyone::verify`, arguments: [txDeny.object(everyoneCondId!), ecB] });
+            const proofsB = txDeny.makeMoveVec({ type: `${PKG}::assembly_binding::ConditionProof`, elements: [cpB, epB] });
+            txDeny.moveCall({
+                target: `${PKG}::gate_extension::request_permit`,
+                arguments: [txDeny.object(configId), txDeny.object(bindingId!), proofsB, txDeny.object(gate1), txDeny.object(gate2), txDeny.object(charB), txDeny.object("0x6")],
+            });
+
+            try {
+                await client.signAndExecuteTransaction({
+                    transaction: txDeny, signer: playerBCtx.keypair,
+                    options: { showEffects: true },
+                });
+                assert(false, "Player B should have been DENIED");
+            } catch {
+                assert(true, "Player B: DENIED — EAccessDenied (correct!)");
+            }
+        }
+
+        // Blocklist Player A and verify request_permit fails
+        if (configId) {
+            await delay(DELAY_MS);
+            console.log("\nBlocklisted player interaction test");
+
+            const txBL = new Transaction();
+            txBL.moveCall({
+                target: `${PKG}::assembly_binding::add_to_blocklist`,
+                arguments: [txBL.object(bindingId!), txBL.pure.u64(BigInt(GAME_CHARACTER_ID))],
+            });
+            await client.signAndExecuteTransaction({ transaction: txBL, signer: playerACtx.keypair, options: { showEffects: true } });
+            await delay(DELAY_MS);
+
+            const txBLDeny = new Transaction();
+            const [ecBL] = txBLDeny.moveCall({
+                target: `${PKG}::assembly_binding::build_eval_context`,
+                arguments: [txBLDeny.object(bindingId!), txBLDeny.pure.id(gate1), txBLDeny.pure.u64(BigInt(GAME_CHARACTER_ID)), txBLDeny.pure.u32(100), txBLDeny.pure.address(playerACtx.address)],
+            });
+            const [cpBL] = txBLDeny.moveCall({ target: `${PKG}::condition_character::verify`, arguments: [txBLDeny.object(charCondId!), ecBL] });
+            const [epBL] = txBLDeny.moveCall({ target: `${PKG}::condition_everyone::verify`, arguments: [txBLDeny.object(everyoneCondId!), ecBL] });
+            const proofsBL = txBLDeny.makeMoveVec({ type: `${PKG}::assembly_binding::ConditionProof`, elements: [cpBL, epBL] });
+            txBLDeny.moveCall({
+                target: `${PKG}::gate_extension::request_permit`,
+                arguments: [txBLDeny.object(configId), txBLDeny.object(bindingId!), proofsBL, txBLDeny.object(gate1), txBLDeny.object(gate2), txBLDeny.object(charA), txBLDeny.object("0x6")],
+            });
+
+            try {
+                await client.signAndExecuteTransaction({
+                    transaction: txBLDeny, signer: playerACtx.keypair,
+                    options: { showEffects: true },
+                });
+                assert(false, "Blocklisted Player A should have been DENIED");
+            } catch {
+                assert(true, "Blocklisted Player A: DENIED — blocklist overrides character rule");
+            }
+
+            // Remove from blocklist, verify access restored
+            const txUnBL = new Transaction();
+            txUnBL.moveCall({
+                target: `${PKG}::assembly_binding::remove_from_blocklist`,
+                arguments: [txUnBL.object(bindingId!), txUnBL.pure.u64(BigInt(GAME_CHARACTER_ID))],
+            });
+            await client.signAndExecuteTransaction({ transaction: txUnBL, signer: playerACtx.keypair, options: { showEffects: true } });
+            await delay(DELAY_MS);
+
+            const txRestored = new Transaction();
+            const [ecR] = txRestored.moveCall({
+                target: `${PKG}::assembly_binding::build_eval_context`,
+                arguments: [txRestored.object(bindingId!), txRestored.pure.id(gate1), txRestored.pure.u64(BigInt(GAME_CHARACTER_ID)), txRestored.pure.u32(100), txRestored.pure.address(playerACtx.address)],
+            });
+            const [cpR] = txRestored.moveCall({ target: `${PKG}::condition_character::verify`, arguments: [txRestored.object(charCondId!), ecR] });
+            const [epR] = txRestored.moveCall({ target: `${PKG}::condition_everyone::verify`, arguments: [txRestored.object(everyoneCondId!), ecR] });
+            const proofsR = txRestored.makeMoveVec({ type: `${PKG}::assembly_binding::ConditionProof`, elements: [cpR, epR] });
+            txRestored.moveCall({
+                target: `${PKG}::gate_extension::request_permit`,
+                arguments: [txRestored.object(configId), txRestored.object(bindingId!), proofsR, txRestored.object(gate1), txRestored.object(gate2), txRestored.object(charA), txRestored.object("0x6")],
+            });
+            const rRestored = await client.signAndExecuteTransaction({
+                transaction: txRestored, signer: playerACtx.keypair,
+                options: { showEffects: true },
+            });
+            assert(rRestored.effects?.status?.status === "success", "Unblocklisted Player A: access restored, JumpPermit issued");
+        }
 
         // ═══════════════════════════════════════════════════════════════
         console.log("\n══════════════════════════════════════════════════════════");
