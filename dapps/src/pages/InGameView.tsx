@@ -1,12 +1,6 @@
 /**
- * In-game assembly view. Shown when the DApp is opened from within
- * the EVE Frontier game client (detected by ?itemId= query param).
- *
- * - No navigation bar, minimal chrome
- * - Black/orange theme matching in-game UI
- * - Auto-connects wallet
- * - Owner: shows current building's rules + link to full admin
- * - Visitor: shows their access status
+ * In-game assembly view — styled to match EVE Frontier's UI.
+ * Route: #/ingame
  */
 import { useEffect } from 'react'
 import { useConnection } from '@evefrontier/dapp-kit'
@@ -15,6 +9,27 @@ import { useRules } from '../hooks/useRules'
 import { usePolicies } from '../hooks/usePolicies'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
 
+const S = {
+  page: 'min-h-screen bg-[#0a0a0a] text-[#c8c8c8] px-3 py-2 font-mono text-[11px] leading-tight',
+  header: 'flex items-center justify-between border-b border-[#2a2a2a] pb-2 mb-3',
+  logo: 'text-[#e87b00] font-bold text-xs tracking-[0.2em] uppercase',
+  wallet: 'text-[10px] text-[#666] font-mono',
+  connectBtn: 'px-2 py-1 bg-[#e87b00] hover:bg-[#ff8c00] text-black text-[10px] font-bold uppercase tracking-wider',
+  section: 'border border-[#1f1f1f] bg-[#0f0f0f] mb-2',
+  sectionHeader: 'px-3 py-1.5 border-b border-[#1f1f1f] bg-[#141414] text-[#e87b00] text-[10px] uppercase tracking-[0.15em] font-bold',
+  sectionBody: 'px-3 py-2',
+  row: 'flex items-center justify-between py-1 border-b border-[#1a1a1a] last:border-0',
+  label: 'text-[#999]',
+  value: 'text-[#ddd]',
+  allow: 'text-[#4ade80] text-[10px] uppercase font-bold tracking-wider',
+  deny: 'text-[#f87171] text-[10px] uppercase font-bold tracking-wider',
+  online: 'text-[#4ade80]',
+  offline: 'text-[#f87171]',
+  muted: 'text-[#444] text-[10px]',
+  btn: 'px-3 py-1 bg-[#e87b00] hover:bg-[#ff8c00] text-black text-[10px] font-bold uppercase tracking-wider',
+  protected: 'text-[#e87b00] text-[10px] uppercase tracking-wider',
+} as const
+
 export function InGameView({ itemId }: { itemId: string | null }) {
   const { walletAddress, isConnected, handleConnect, hasEveVault } = useConnection()
   const { data: owned } = useOwnedAssemblies(walletAddress)
@@ -22,31 +37,21 @@ export function InGameView({ itemId }: { itemId: string | null }) {
   const { policies } = usePolicies(walletAddress)
   const { groups } = useBuildingGroups(walletAddress)
 
-  // Auto-connect wallet
   useEffect(() => {
-    if (!isConnected && hasEveVault) {
-      handleConnect()
-    }
+    if (!isConnected && hasEveVault) handleConnect()
   }, [isConnected, hasEveVault, handleConnect])
 
-  // Find the assembly matching the itemId
-  // Find the assembly matching the itemId from the game URL
   const assembly = itemId
     ? owned?.assemblies.find((a) => a.id === itemId || a.id.includes(itemId))
     : null
 
-  // All buildings with extensions (for when no specific itemId is given)
   const protectedBuildings = owned?.assemblies.filter((a) => !!a.details?.extension) ?? []
-
-  // Check if the connected wallet is the owner
   const isOwner = !!owned && !!walletAddress
 
-  // Find which building groups contain this assembly
   const containingGroups = groups.filter((g) =>
     g.entries.some((e) => e.assemblyId === assembly?.id),
   )
 
-  // Find policies for those groups
   const activeRules = containingGroups.flatMap((g) => {
     const policy = policies.find((p) => p.buildingGroupId === g.id)
     if (!policy) return []
@@ -60,171 +65,163 @@ export function InGameView({ itemId }: { itemId: string | null }) {
   })
 
   return (
-    <div className="min-h-screen bg-black text-white p-4" style={{ fontFamily: "'Segoe UI', sans-serif" }}>
+    <div className={S.page}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <span className="text-orange-500 font-bold text-sm tracking-wider uppercase">ef guard</span>
+      <div className={S.header}>
+        <div className="flex items-center gap-3">
+          <span className={S.logo}>ef guard</span>
           {assembly && (
-            <span className="text-gray-400 text-xs">
-              {displayName(assembly)}
-            </span>
+            <>
+              <span className={S.muted}>|</span>
+              <span className={S.value}>{displayName(assembly)}</span>
+            </>
           )}
         </div>
         {!isConnected ? (
-          <button
-            onClick={handleConnect}
-            className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white text-xs rounded"
-          >
-            Connect Wallet
-          </button>
+          <button onClick={handleConnect} className={S.connectBtn}>Connect</button>
         ) : (
-          <span className="text-xs text-gray-500 font-mono">
-            {walletAddress?.slice(0, 6)}...{walletAddress?.slice(-4)}
-          </span>
+          <span className={S.wallet}>{walletAddress?.slice(0, 8)}..{walletAddress?.slice(-4)}</span>
         )}
       </div>
 
-      {/* Loading state */}
+      {/* Connecting */}
       {!isConnected && (
-        <div className="text-center py-12">
-          <p className="text-gray-400 text-sm">Connecting wallet...</p>
+        <div className={S.section}>
+          <div className={S.sectionBody}>
+            <span className={S.muted}>Connecting wallet...</span>
+          </div>
         </div>
       )}
 
+      {/* Loading specific building */}
       {isConnected && itemId && !assembly && (
-        <div className="text-center py-12">
-          <p className="text-gray-400 text-sm">Loading building data...</p>
-          <p className="text-gray-600 text-xs mt-2">Item ID: {itemId}</p>
+        <div className={S.section}>
+          <div className={S.sectionBody}>
+            <span className={S.muted}>Loading building data...</span>
+          </div>
         </div>
       )}
 
-      {/* No specific building — show overview of all protected buildings */}
+      {/* Overview — no specific building */}
       {isConnected && !itemId && (
-        <div className="space-y-4">
-          <div className="border border-gray-800 rounded p-3">
-            <h3 className="text-xs text-orange-500 uppercase font-semibold mb-3">Your Protected Buildings</h3>
-            {protectedBuildings.length === 0 ? (
-              <p className="text-gray-500 text-xs">No buildings with ef guard installed yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {protectedBuildings.map((a) => (
-                  <div key={a.id} className="flex items-center justify-between py-1.5 border-b border-gray-900 last:border-0">
-                    <div>
-                      <span className="text-white text-xs">{displayName(a)}</span>
-                      <span className={`ml-2 text-[10px] uppercase font-semibold ${
-                        a.details?.status === 'ONLINE' ? 'text-green-500' : 'text-red-500'
-                      }`}>{a.details?.status ?? '?'}</span>
+        <>
+          <div className={S.section}>
+            <div className={S.sectionHeader}>Your Protected Buildings</div>
+            <div className={S.sectionBody}>
+              {protectedBuildings.length === 0 ? (
+                <span className={S.muted}>No buildings with ef guard installed.</span>
+              ) : (
+                protectedBuildings.map((a) => (
+                  <div key={a.id} className={S.row}>
+                    <span className={S.value}>{displayName(a)}</span>
+                    <div className="flex items-center gap-3">
+                      <span className={a.details?.status === 'ONLINE' ? S.online : S.offline}>
+                        {a.details?.status ?? '?'}
+                      </span>
+                      <span className={S.protected}>Protected</span>
                     </div>
-                    <span className="text-orange-500 text-[10px]">Protected</span>
                   </div>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </div>
 
           {isOwner && (
-            <a
-              href={window.location.origin + window.location.pathname + '#/'}
-              className="inline-block px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs rounded"
-            >
-              Open Admin Panel
-            </a>
+            <div className="mt-3">
+              <a href={window.location.origin + window.location.pathname + '#/'} className={S.btn}>
+                Admin Panel
+              </a>
+            </div>
           )}
-        </div>
+        </>
       )}
 
+      {/* Specific building view */}
       {isConnected && assembly && (
-        <div className="space-y-4">
+        <>
           {/* Building info */}
-          <div className="border border-gray-800 rounded p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-medium">{displayName(assembly)}</h2>
-                {assembly.details?.description && (
-                  <p className="text-gray-500 text-xs mt-0.5">{assembly.details.description}</p>
-                )}
+          <div className={S.section}>
+            <div className={S.sectionHeader}>Building Status</div>
+            <div className={S.sectionBody}>
+              <div className={S.row}>
+                <span className={S.label}>Name</span>
+                <span className={S.value}>{displayName(assembly)}</span>
               </div>
-              <div className="flex items-center gap-2">
-                {assembly.details?.extension ? (
-                  <span className="text-orange-500 text-[10px] font-semibold uppercase">Protected</span>
-                ) : (
-                  <span className="text-gray-600 text-[10px]">No protection</span>
-                )}
-                <span className={`text-[10px] uppercase font-semibold ${
-                  assembly.details?.status === 'ONLINE' ? 'text-green-500' : 'text-red-500'
-                }`}>
+              {assembly.details?.description && (
+                <div className={S.row}>
+                  <span className={S.label}>Description</span>
+                  <span className={S.value}>{assembly.details.description}</span>
+                </div>
+              )}
+              <div className={S.row}>
+                <span className={S.label}>Status</span>
+                <span className={assembly.details?.status === 'ONLINE' ? S.online : S.offline}>
                   {assembly.details?.status ?? '?'}
                 </span>
+              </div>
+              <div className={S.row}>
+                <span className={S.label}>Protection</span>
+                {assembly.details?.extension ? (
+                  <span className={S.protected}>Active</span>
+                ) : (
+                  <span className={S.muted}>None</span>
+                )}
               </div>
             </div>
           </div>
 
           {/* Access rules */}
-          {activeRules.length > 0 ? (
-            <div className="border border-gray-800 rounded p-3">
-              <h3 className="text-xs text-orange-500 uppercase font-semibold mb-2">Access Rules</h3>
-              <div className="space-y-1">
-                {activeRules.map((r, i) => (
-                  <div key={r.id} className="flex items-center justify-between text-xs py-1 border-b border-gray-900 last:border-0">
+          <div className={S.section}>
+            <div className={S.sectionHeader}>Access Rules</div>
+            <div className={S.sectionBody}>
+              {activeRules.length > 0 ? (
+                activeRules.map((r, i) => (
+                  <div key={r.id} className={S.row}>
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-600 w-4">{i + 1}</span>
-                      <span className="text-white">{r.label}</span>
+                      <span className={S.muted}>{String(i + 1).padStart(2, '0')}</span>
+                      <span className={S.value}>{r.label}</span>
                     </div>
-                    <span className={`text-[10px] font-semibold uppercase ${
-                      r.effect === 'Allow' ? 'text-green-500' : 'text-red-500'
-                    }`}>
+                    <span className={r.effect === 'Allow' ? S.allow : S.deny}>
                       {r.effect}
                     </span>
                   </div>
-                ))}
+                ))
+              ) : (
+                <span className={S.muted}>No rules configured.</span>
+              )}
+            </div>
+          </div>
+
+          {/* Owner management */}
+          {isOwner && (
+            <div className={S.section}>
+              <div className={S.sectionHeader}>Management</div>
+              <div className={S.sectionBody}>
+                {containingGroups.length > 0 && (
+                  <div className={S.row}>
+                    <span className={S.label}>Building Group</span>
+                    <span className={S.value}>{containingGroups.map((g) => g.name).join(', ')}</span>
+                  </div>
+                )}
+                <div className="mt-2">
+                  <a
+                    href={window.location.origin + window.location.pathname + '#/'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={S.btn}
+                  >
+                    Admin Panel
+                  </a>
+                </div>
               </div>
             </div>
-          ) : (
-            <div className="border border-gray-800 rounded p-3">
-              <p className="text-gray-500 text-xs">No access rules configured for this building.</p>
-            </div>
           )}
-
-          {/* Visitor access status */}
-          {!isOwner && (
-            <div className="border border-gray-800 rounded p-3">
-              <h3 className="text-xs text-orange-500 uppercase font-semibold mb-2">Your Access</h3>
-              <p className="text-gray-400 text-xs">
-                Connect your wallet to check your access level for this building.
-              </p>
-            </div>
-          )}
-
-          {/* Owner actions */}
-          {isOwner && (
-            <div className="border border-gray-800 rounded p-3">
-              <h3 className="text-xs text-orange-500 uppercase font-semibold mb-2">Management</h3>
-              {containingGroups.length > 0 ? (
-                <p className="text-gray-400 text-xs mb-2">
-                  This building is in: {containingGroups.map((g) => g.name).join(', ')}
-                </p>
-              ) : (
-                <p className="text-gray-400 text-xs mb-2">
-                  This building is not in any building group yet.
-                </p>
-              )}
-              <a
-                href={window.location.origin + window.location.pathname + '#/'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs rounded"
-              >
-                Open Full Admin Panel
-              </a>
-            </div>
-          )}
-        </div>
+        </>
       )}
 
       {/* Footer */}
-      <div className="mt-8 text-center">
-        <span className="text-gray-700 text-[10px]">ef guard access control middleware</span>
+      <div className="mt-4 border-t border-[#1a1a1a] pt-2">
+        <span className={S.muted}>ef guard // access control middleware</span>
       </div>
     </div>
   )
