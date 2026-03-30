@@ -16,7 +16,8 @@ const TYPE_LABELS: Record<string, string> = {
 const DAPP_URL = 'https://brainy-bots.github.io/efguard/#/ingame'
 
 function supportsExtension(a: OwnedAssembly): boolean {
-  return ['gate', 'turret', 'ssu'].includes(a.type)
+  // Turrets excluded — game server controls targeting calls, can't pass custom objects
+  return ['gate', 'ssu'].includes(a.type)
 }
 
 function hasEfGuardExtension(a: OwnedAssembly): boolean {
