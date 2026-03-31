@@ -11,6 +11,7 @@ import type { RuleTarget } from '../types'
 import { CreateRuleModal } from '../components/CreateRuleModal'
 import { CreateBuildingGroupModal } from '../components/CreateBuildingGroupModal'
 import { HelpPanel } from '../components/HelpPanel'
+import { fetchAllBindings, type BindingSummary } from '../lib/chain-policies'
 import { theme, S } from '../lib/theme'
 
 
@@ -648,7 +649,8 @@ export function Overview() {
         </div>
       )}
 
-      {/* Buildings list removed — use the Buildings page instead */}
+      {/* On-chain policy viewer — shows actual deployed rules */}
+      <OnChainPolicies />
 
       {/* Blocklist — direct on-chain, no conditions needed */}
       {isOwner && bindingId && (
@@ -776,7 +778,7 @@ export function Overview() {
         />
       )}
 
-      {editingGroup && (
+      {editingGroup != null && (
         <CreateBuildingGroupModal
           onClose={() => setEditingGroup(null)}
           createGroup={createGroup}
@@ -788,5 +790,70 @@ export function Overview() {
         />
       )}
     </div>
+  )
+}
+
+function OnChainPolicies() {
+  const [bindings, setBindings] = useState<BindingSummary[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchAllBindings()
+      .then(setBindings)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div style={S.panel} className="p-4">
+        <p className="text-xs animate-pulse" style={{ color: theme.textSecondary }}>Loading on-chain policies...</p>
+      </div>
+    )
+  }
+
+  if (bindings.length === 0) return null
+
+  const allPolicies = bindings.flatMap((b) =>
+    b.policies.filter((p) => p.rules.length > 0).map((p) => ({ ...p, bindingOwner: b.owner }))
+  )
+
+  if (allPolicies.length === 0) return null
+
+  return (
+    <details style={S.panel}>
+      <summary
+        className="px-4 py-3 text-xs font-semibold uppercase tracking-wider cursor-pointer"
+        style={{ color: theme.orange }}
+      >
+        On-Chain Rules ({allPolicies.length} buildings)
+      </summary>
+      <div className="px-4 pb-3 space-y-3">
+        <p className="text-xs" style={{ color: theme.textMuted }}>
+          Live rules enforced on-chain. Visible to everyone.
+        </p>
+        {allPolicies.map((p) => (
+          <div key={p.assemblyId} style={{ border: `1px solid ${theme.border}`, padding: '8px 10px' }}>
+            <p className="text-[10px] font-mono mb-1" style={{ color: theme.textSecondary }}>
+              {p.assemblyId.slice(0, 10)}...{p.assemblyId.slice(-6)}
+            </p>
+            {p.rules.map((r, i) => (
+              <div key={r.conditionId} className="flex items-center justify-between text-xs py-0.5">
+                <div className="flex items-center gap-2">
+                  <span style={{ color: theme.textMuted }}>{i + 1}.</span>
+                  <span style={{ color: theme.textPrimary }}>{r.label}</span>
+                </div>
+                <span
+                  className="text-[10px] font-semibold uppercase"
+                  style={{ color: r.effect === 'Allow' ? theme.green : theme.red }}
+                >
+                  {r.effect}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </details>
   )
 }
