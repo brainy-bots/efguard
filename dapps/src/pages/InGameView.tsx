@@ -124,6 +124,9 @@ export function InGameView() {
                   </div>
                 </div>
               )}
+              <div style={{ padding: '8px', fontSize: '9px', color: C.textMuted, wordBreak: 'break-all', opacity: 0.5 }}>
+                search: {window.location.search || '(empty)'} | hash: {window.location.hash} | assemblyId: {assemblyId ?? '(none)'}
+              </div>
             </>
           )}
 
