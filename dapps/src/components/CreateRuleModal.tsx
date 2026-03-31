@@ -13,13 +13,15 @@ function useTribes() {
     queryFn: async (): Promise<TribeInfo[]> => {
       const res = await fetch(`${DATAHUB_API_URL}/v2/tribes?limit=500`)
       const data = await res.json()
-      // Deduplicate by ID (API sometimes returns duplicates)
-      const seen = new Set<number>()
-      const unique: TribeInfo[] = []
+      // Deduplicate by ID — prefer non-NPC names over "NPC Corp" placeholders
+      const byId = new Map<number, TribeInfo>()
       for (const t of (data.data ?? []) as TribeInfo[]) {
-        if (!seen.has(t.id)) { seen.add(t.id); unique.push(t) }
+        const existing = byId.get(t.id)
+        if (!existing || existing.name.startsWith('NPC Corp')) {
+          byId.set(t.id, t)
+        }
       }
-      return unique
+      return [...byId.values()]
     },
     staleTime: 5 * 60_000,
   })
