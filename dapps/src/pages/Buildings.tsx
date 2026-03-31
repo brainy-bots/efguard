@@ -6,7 +6,7 @@ import { useDAppKit } from '@mysten/dapp-kit-react'
 import { Transaction } from '@mysten/sui/transactions'
 import { useOwnedAssemblies, displayName, type OwnedAssembly } from '../hooks/useOwnedAssemblies'
 import type { AssemblyType } from '../types'
-import { EFGUARD_PKG, WORLD_PKG } from '../env'
+import { EFGUARD_PKG, WORLD_PKG, TENANT } from '../env'
 import { useToast } from '../components/Toast'
 import { theme, S } from '../lib/theme'
 
@@ -14,7 +14,25 @@ const TYPE_LABELS: Record<string, string> = {
   gate: 'Gate', turret: 'Turret', ssu: 'Smart Storage', assembly: 'Assembly', unknown: 'Unknown',
 }
 
-const DAPP_URL = 'https://brainy-bots.github.io/efguard/#/ingame'
+const DAPP_URL_BASE = 'https://brainy-bots.github.io/efguard/'
+const DAPP_URL = `${DAPP_URL_BASE}#/ingame`
+
+async function getDappUrlForAssembly(assemblyId: string): Promise<string> {
+  try {
+    const res = await executeGraphQLQuery<{
+      object: { asMoveObject: { contents: { json: { key?: { item_id?: string; tenant?: string } } } } }
+    }>(
+      `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json } } } }`,
+      { id: assemblyId },
+    )
+    const key = res.data?.object?.asMoveObject?.contents?.json?.key
+    if (key?.item_id) {
+      const tenant = key.tenant || TENANT
+      return `${DAPP_URL_BASE}?itemId=${key.item_id}&tenant=${tenant}#/ingame`
+    }
+  } catch { /* fall back */ }
+  return DAPP_URL
+}
 
 function supportsExtension(a: OwnedAssembly): boolean {
   // Turrets excluded — game server controls targeting calls, can't pass custom objects
@@ -130,7 +148,7 @@ export function Buildings() {
 
       tx.moveCall({
         target: updateUrlTarget,
-        arguments: [tx.object(assembly.id), cap, tx.pure.string(DAPP_URL)],
+        arguments: [tx.object(assembly.id), cap, tx.pure.string(await getDappUrlForAssembly(assembly.id))],
       })
 
       tx.moveCall({
@@ -280,7 +298,7 @@ export function Buildings() {
 
       tx.moveCall({
         target: updateUrlTarget,
-        arguments: [tx.object(assembly.id), cap, tx.pure.string(DAPP_URL)],
+        arguments: [tx.object(assembly.id), cap, tx.pure.string(await getDappUrlForAssembly(assembly.id))],
       })
 
       tx.moveCall({
@@ -384,9 +402,9 @@ export function Buildings() {
                         <p className="text-[10px] mt-0.5" style={{ color: theme.textSecondary }}>{d.description}</p>
                       )}
                       {d?.dappUrl && (
-                        <p className="text-[10px] mt-0.5" style={{ color: d.dappUrl === DAPP_URL ? theme.textMuted : theme.orange }}>
+                        <p className="text-[10px] mt-0.5" style={{ color: d.dappUrl?.includes(DAPP_URL_BASE) ? theme.textMuted : theme.orange }}>
                           DApp: {d.dappUrl}
-                          {d.dappUrl !== DAPP_URL && ' (outdated)'}
+                          {!d.dappUrl?.includes(DAPP_URL_BASE) && ' (outdated)'}
                         </p>
                       )}
                     </div>
@@ -413,7 +431,7 @@ export function Buildings() {
                           {isInstalling ? 'Installing...' : hasEfGuardExtension(a) ? 'Reinstall' : isOldEfGuard(a) ? 'Upgrade ef_guard' : hasOtherExtension(a) ? 'Replace with ef_guard' : 'Install ef_guard'}
                         </button>
                       )}
-                      {d?.dappUrl && d.dappUrl !== DAPP_URL && hasEfGuardExtension(a) && (
+                      {d?.dappUrl && !d.dappUrl.includes(DAPP_URL_BASE) && hasEfGuardExtension(a) && (
                         <button
                           onClick={() => handleUpdateUrl(a)}
                           disabled={isInstalling}
