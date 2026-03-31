@@ -27,7 +27,7 @@ async function getDappUrlForAssembly(assemblyId: string): Promise<string> {
     )
     const key = res.data?.object?.asMoveObject?.contents?.json?.key
     if (key?.item_id) {
-      return `${DAPP_URL_BASE}?itemId=${key.item_id}#/ingame`
+      return `${DAPP_URL_BASE}#/ingame?itemId=${key.item_id}`
     }
   } catch { /* fall back */ }
   return DAPP_URL
