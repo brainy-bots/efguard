@@ -436,8 +436,21 @@ export function Overview() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <h1 className="text-xl font-bold" style={{ color: theme.textPrimary }}>Access Policies</h1>
-
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold" style={{ color: theme.textPrimary }}>Access Policies</h1>
+        {isOwner && policies.some((p) => p.dirty) && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs" style={{ color: '#facc15' }}>unsaved changes</span>
+            <button
+              onClick={() => handleApplyAll()}
+              disabled={applying === 'all'}
+              style={S.btn}
+            >
+              {applying === 'all' ? 'Applying...' : 'Apply All'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Help panel (collapsed by default) */}
       <HelpPanel />
@@ -448,8 +461,6 @@ export function Overview() {
         const groupName = group?.name ?? 'Unknown group'
         const assemblyCount = group?.entries.length ?? 0
         const sorted = sortedEntries(policy.entries)
-        void applying // used in buttons below
-
         return (
           <div key={policy.buildingGroupId} style={S.panel}>
             {/* Header */}
@@ -461,16 +472,8 @@ export function Overview() {
               {isOwner && (
                 <div className="flex items-center gap-2">
                   {policy.dirty && (
-                    <span className="text-xs" style={{ color: '#facc15' }}>unsaved</span>
+                    <span className="text-[10px]" style={{ color: '#facc15' }}>unsaved</span>
                   )}
-                  <button
-                    onClick={() => handleApplyAll()}
-                    disabled={!policy.dirty || applying === 'all'}
-                    className="disabled:opacity-30"
-                    style={S.btnSmall}
-                  >
-                    {applying === 'all' ? 'Applying...' : 'Apply'}
-                  </button>
                   <button
                     onClick={() => setEditingGroup(policy.buildingGroupId)}
                     className="text-xs"
