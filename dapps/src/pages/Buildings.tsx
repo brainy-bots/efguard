@@ -103,12 +103,31 @@ export function Buildings() {
           arguments: [newBinding, tx.pure.id(assembly.id)],
         })
       } else {
-        // Register assembly in existing binding
-        const regFn = assemblyType === 'gate' ? 'register_gate' : assemblyType === 'turret' ? 'register_turret' : 'register_ssu'
-        tx.moveCall({
-          target: `${EFGUARD_PKG}::assembly_binding::${regFn}`,
-          arguments: [tx.object(existingBindingId), tx.pure.id(assembly.id)],
-        })
+        // Check if assembly is already registered before trying to register
+        let alreadyRegistered = false
+        try {
+          const bindingRes = await executeGraphQLQuery<{
+            object: { asMoveObject: { contents: { json: any } } }
+          }>(
+            `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json } } } }`,
+            { id: existingBindingId },
+          )
+          const bJson = bindingRes.data?.object?.asMoveObject?.contents?.json ?? {}
+          const registered = [
+            ...(bJson.gates?.contents ?? []),
+            ...(bJson.turrets?.contents ?? []),
+            ...(bJson.storage_units?.contents ?? []),
+          ]
+          alreadyRegistered = registered.includes(assembly.id)
+        } catch { /* ignore, try to register anyway */ }
+
+        if (!alreadyRegistered) {
+          const regFn = assemblyType === 'gate' ? 'register_gate' : assemblyType === 'turret' ? 'register_turret' : 'register_ssu'
+          tx.moveCall({
+            target: `${EFGUARD_PKG}::assembly_binding::${regFn}`,
+            arguments: [tx.object(existingBindingId), tx.pure.id(assembly.id)],
+          })
+        }
       }
 
       const worldTypeMap: Record<string, string> = {
