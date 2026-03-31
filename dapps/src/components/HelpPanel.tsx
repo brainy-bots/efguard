@@ -1,13 +1,25 @@
 import { useState } from 'react'
 import { theme, S } from '../lib/theme'
 
+const STORAGE_KEY = 'efguard:help-panel-closed'
+
 export function HelpPanel() {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => localStorage.getItem(STORAGE_KEY) !== 'true')
+
+  function toggle() {
+    const next = !open
+    setOpen(next)
+    if (next) {
+      localStorage.removeItem(STORAGE_KEY)
+    } else {
+      localStorage.setItem(STORAGE_KEY, 'true')
+    }
+  }
 
   return (
     <div style={S.panel}>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         className="w-full flex items-center justify-between px-4 py-3 text-xs transition-colors"
         style={{ color: theme.textSecondary }}
         onMouseEnter={(e) => { e.currentTarget.style.color = theme.textPrimary }}
@@ -31,7 +43,11 @@ export function HelpPanel() {
             <h3 className="font-semibold mb-1" style={{ color: theme.textPrimary }}>Building types</h3>
             <ul className="space-y-1 ml-3 list-disc">
               <li><span style={{ color: theme.textPrimary }}>Gates:</span> Controls who can jump through your gates</li>
-              <li><span style={{ color: theme.textPrimary }}>Turrets:</span> Controls who your turrets target &mdash; allowed players won't be shot</li>
+              <li>
+                <span style={{ color: theme.textPrimary }}>Turrets:</span>{' '}
+                <span style={{ color: theme.red }}>(not supported)</span>{' '}
+                The game server controls turret targeting and cannot pass custom parameters to extensions
+              </li>
               <li><span style={{ color: theme.textPrimary }}>Smart Storage:</span> Controls who can deposit or withdraw items from your storage</li>
             </ul>
           </div>

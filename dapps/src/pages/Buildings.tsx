@@ -396,7 +396,7 @@ export function Buildings() {
             {owned.assemblies.length} building{owned.assemblies.length !== 1 ? 's' : ''} owned by character {owned.characterId?.slice(0, 10)}…
           </p>
           <div className="space-y-2">
-            {owned.assemblies.map((a) => {
+            {owned.assemblies.filter((a) => a.type !== 'turret').map((a) => {
               const d = a.details
               const statusColor = d?.status === 'ONLINE' ? theme.green : d?.status === 'OFFLINE' ? theme.red : theme.textSecondary
               const isInstalling = installing === a.id
