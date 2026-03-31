@@ -419,8 +419,11 @@ export function Overview() {
           </ol>
         </div>
 
-        <p className="text-xs mb-4" style={{ color: theme.textMuted }}>
-          Connect your EVE Vault wallet to get started.
+        <p className="text-xs mb-3" style={{ color: theme.green, fontWeight: 600 }}>
+          Live on Stillness — connect your EVE Vault wallet to get started.
+        </p>
+        <p className="text-xs" style={{ color: theme.textMuted }}>
+          Open source on <a href="https://github.com/brainy-bots/efguard" target="_blank" rel="noopener noreferrer" style={{ color: theme.orange, textDecoration: 'none' }}>GitHub</a>
         </p>
       </div>
     )
