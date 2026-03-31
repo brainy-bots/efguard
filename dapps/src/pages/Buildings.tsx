@@ -82,6 +82,20 @@ export function Buildings() {
   const [installing, setInstalling] = useState<string | null>(null)
   const [result, setResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null)
   const [existingBindingId, setExistingBindingId] = useState<string | null>(null)
+  const [expectedUrls, setExpectedUrls] = useState<Record<string, string>>({})
+
+  // Precompute expected DApp URLs for all assemblies
+  useEffect(() => {
+    if (!owned?.assemblies.length) return
+    Promise.all(
+      owned.assemblies.map(async (a) => {
+        const url = await getDappUrlForAssembly(a.id)
+        return [a.id, url] as const
+      }),
+    ).then((pairs) => {
+      setExpectedUrls(Object.fromEntries(pairs))
+    }).catch(console.error)
+  }, [owned?.assemblies])
 
   // Auto-discover existing binding
   useEffect(() => {
@@ -402,9 +416,9 @@ export function Buildings() {
                         <p className="text-[10px] mt-0.5" style={{ color: theme.textSecondary }}>{d.description}</p>
                       )}
                       {d?.dappUrl && (
-                        <p className="text-[10px] mt-0.5" style={{ color: d.dappUrl?.includes(DAPP_URL_BASE) ? theme.textMuted : theme.orange }}>
+                        <p className="text-[10px] mt-0.5" style={{ color: d.dappUrl === expectedUrls[a.id] ? theme.textMuted : theme.orange }}>
                           DApp: {d.dappUrl}
-                          {!d.dappUrl?.includes(DAPP_URL_BASE) && ' (outdated)'}
+                          {expectedUrls[a.id] && d.dappUrl !== expectedUrls[a.id] && ' (outdated)'}
                         </p>
                       )}
                     </div>
@@ -431,7 +445,7 @@ export function Buildings() {
                           {isInstalling ? 'Installing...' : hasEfGuardExtension(a) ? 'Reinstall' : isOldEfGuard(a) ? 'Upgrade ef_guard' : hasOtherExtension(a) ? 'Replace with ef_guard' : 'Install ef_guard'}
                         </button>
                       )}
-                      {d?.dappUrl && !d.dappUrl.includes(DAPP_URL_BASE) && hasEfGuardExtension(a) && (
+                      {d?.dappUrl && expectedUrls[a.id] && d.dappUrl !== expectedUrls[a.id] && hasEfGuardExtension(a) && (
                         <button
                           onClick={() => handleUpdateUrl(a)}
                           disabled={isInstalling}
