@@ -31,20 +31,19 @@ export function Overview() {
   const [showGroupModal, setShowGroupModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<string | null>(null)
   const [applying, setApplying] = useState<string | null>(null)
-  const [bindingId, setBindingId] = useState(() => {
-    if (!walletAddress) return ''
-    return localStorage.getItem(storageKey('binding-id', walletAddress)) ?? ''
-  })
-  const [bindingOwner, setBindingOwner] = useState(() => {
-    if (!walletAddress) return ''
-    return localStorage.getItem(storageKey('binding-id', walletAddress)) ? walletAddress : ''
-  })
+  const [bindingId, setBindingId] = useState('')
+  const [bindingOwner, setBindingOwner] = useState('')
 
-  // Discover binding from chain if not found in localStorage
+  // Discover binding: check localStorage first, then chain
   useEffect(() => {
     if (!walletAddress) return
-    // Already found via localStorage initializer
-    if (localStorage.getItem(storageKey('binding-id', walletAddress))) return
+
+    const saved = localStorage.getItem(storageKey('binding-id', walletAddress))
+    if (saved) {
+      setBindingId(saved)
+      setBindingOwner(walletAddress)
+      return
+    }
 
     const bindingType = `${EFGUARD_PKG}::assembly_binding::AssemblyBinding`
     executeGraphQLQuery<{
