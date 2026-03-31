@@ -98,7 +98,7 @@ export function InGameView() {
                   <div key={p.assemblyId} style={{ ...panelStyle, marginBottom: 8 }}>
                     <div style={headerStyle}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>Building {p.assemblyId.slice(0, 8)}...{p.assemblyId.slice(-4)}</span>
+                        <span>{p.assemblyName ?? `Building ${p.assemblyId.slice(0, 8)}...${p.assemblyId.slice(-4)}`}</span>
                         <span style={{ color: C.orange }}>PROTECTED</span>
                       </div>
                     </div>

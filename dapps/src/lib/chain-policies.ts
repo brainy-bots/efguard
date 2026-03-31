@@ -13,6 +13,7 @@ export interface OnChainRule {
 
 export interface OnChainAssemblyPolicy {
   assemblyId: string
+  assemblyName: string | null
   rules: OnChainRule[]
 }
 
@@ -62,10 +63,36 @@ async function resolveConditionLabels(conditionIds: string[]): Promise<Map<strin
 }
 
 function parseRules(rawRules: any[]): { conditionId: string; effectStr: 'Allow' | 'Deny' }[] {
-  return rawRules.map((r: any) => ({
-    conditionId: r.condition_id,
-    effectStr: r.effect?.Allow !== undefined ? 'Allow' as const : 'Deny' as const,
-  }))
+  return rawRules.map((r: any) => {
+    const eff = r.effect
+    // Sui GraphQL represents Move enums as {"@variant": "Allow"} or {"Allow": ...}
+    const isAllow = eff?.['@variant'] === 'Allow' || eff?.Allow !== undefined
+    return {
+      conditionId: r.condition_id,
+      effectStr: isAllow ? 'Allow' as const : 'Deny' as const,
+    }
+  })
+}
+
+async function resolveAssemblyNames(assemblyIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>()
+  if (assemblyIds.length === 0) return names
+
+  for (const id of assemblyIds) {
+    try {
+      const res = await executeGraphQLQuery<{
+        object: { asMoveObject: { contents: { json: any } } }
+      }>(
+        `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json } } } }`,
+        { id },
+      )
+      const json = res.data?.object?.asMoveObject?.contents?.json
+      const name = json?.metadata?.name
+      if (name) names.set(id, name)
+    } catch { /* ignore */ }
+  }
+
+  return names
 }
 
 /** Fetch all bindings and their policies from chain. */
@@ -100,11 +127,13 @@ export async function fetchAllBindings(): Promise<BindingSummary[]> {
     }
 
     const conditionLabels = await resolveConditionLabels([...allConditionIds])
+    const assemblyNames = await resolveAssemblyNames(allIds)
 
     const policies: OnChainAssemblyPolicy[] = policyEntries.map((p: any) => {
       const parsed = parseRules(p.value?.rules ?? [])
       return {
         assemblyId: p.key,
+        assemblyName: assemblyNames.get(p.key) ?? null,
         rules: parsed.map((r) => ({
           conditionId: r.conditionId,
           effect: r.effectStr,
