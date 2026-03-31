@@ -3,7 +3,8 @@
  * Shared between InGameView and Overview.
  */
 import { executeGraphQLQuery } from '@evefrontier/dapp-kit'
-import { EFGUARD_PKG } from '../env'
+import { EFGUARD_PKG, DATAHUB_API_URL } from '../env'
+import { lookupCharacterByGameId } from './character-lookup'
 
 export interface OnChainRule {
   conditionId: string
@@ -24,6 +25,20 @@ export interface BindingSummary {
   policies: OnChainAssemblyPolicy[]
 }
 
+let tribesCache: Array<{ id: number; name: string; nameShort: string }> | null = null
+
+async function getTribes(): Promise<Array<{ id: number; name: string; nameShort: string }>> {
+  if (tribesCache) return tribesCache
+  try {
+    const res = await fetch(`${DATAHUB_API_URL}/v2/tribes?limit=500`)
+    const data = await res.json()
+    tribesCache = data.data ?? []
+  } catch {
+    tribesCache = []
+  }
+  return tribesCache!
+}
+
 async function resolveConditionLabels(conditionIds: string[]): Promise<Map<string, string>> {
   const labels = new Map<string, string>()
   if (conditionIds.length === 0) return labels
@@ -42,9 +57,26 @@ async function resolveConditionLabels(conditionIds: string[]): Promise<Map<strin
       if (typeRepr.includes('EveryoneCondition')) {
         labels.set(id, 'Everyone')
       } else if (typeRepr.includes('TribeCondition')) {
-        labels.set(id, `Tribe #${json.tribe_id ?? '?'}`)
+        const tribeId = json.tribe_id
+        let tribeName = `Tribe #${tribeId ?? '?'}`
+        if (tribeId) {
+          try {
+            const tribes = await getTribes()
+            const tribe = tribes.find((t) => String(t.id) === String(tribeId))
+            if (tribe) tribeName = `[${tribe.nameShort}] ${tribe.name}`
+          } catch { /* fall back to ID */ }
+        }
+        labels.set(id, tribeName)
       } else if (typeRepr.includes('CharacterCondition')) {
-        labels.set(id, `Player #${json.char_game_id ?? '?'}`)
+        const charGameId = json.char_game_id
+        let charName = `Player #${charGameId ?? '?'}`
+        if (charGameId) {
+          try {
+            const result = await lookupCharacterByGameId(String(charGameId))
+            if (result?.name) charName = `${result.name} (#${charGameId})`
+          } catch { /* fall back to ID */ }
+        }
+        labels.set(id, charName)
       } else if (typeRepr.includes('MinBalanceCondition')) {
         labels.set(id, `Min Balance: ${json.min_amount ?? '?'}`)
       } else if (typeRepr.includes('TokenHolderCondition')) {
