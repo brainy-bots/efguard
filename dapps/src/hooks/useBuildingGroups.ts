@@ -67,5 +67,16 @@ export function useBuildingGroups(walletAddress?: string | null) {
     })
   }, [wallet])
 
-  return { groups, createGroup, deleteGroup, addEntry, removeEntry }
+  const updateGroup = useCallback((groupId: string, name: string, entries: BuildingGroupEntry[]) => {
+    setGroups((prev) => {
+      const next = prev.map((g) => {
+        if (g.id !== groupId) return g
+        return { ...g, name, entries }
+      })
+      save(next, wallet)
+      return next
+    })
+  }, [wallet])
+
+  return { groups, createGroup, deleteGroup, addEntry, removeEntry, updateGroup }
 }

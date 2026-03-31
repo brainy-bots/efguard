@@ -1,24 +1,34 @@
 import { useState } from 'react'
 import { useConnection } from '@evefrontier/dapp-kit'
 import { useOwnedAssemblies, displayName } from '../hooks/useOwnedAssemblies'
-import type { AssemblyType, BuildingGroupEntry } from '../types'
+import type { AssemblyType, BuildingGroupEntry, BuildingGroup } from '../types'
 import { theme, S } from '../lib/theme'
 
 export function CreateBuildingGroupModal({
   onClose,
   onCreate,
+  onUpdate,
   createGroup,
   addEntry,
+  updateGroup,
+  editGroup,
 }: {
   onClose: () => void
   onCreate: (groupId: string) => void
+  onUpdate?: () => void
   createGroup: (name: string) => string
   addEntry: (groupId: string, entry: BuildingGroupEntry) => void
+  updateGroup?: (groupId: string, name: string, entries: BuildingGroupEntry[]) => void
+  editGroup?: BuildingGroup | null
 }) {
   const { walletAddress } = useConnection()
   const { data: owned } = useOwnedAssemblies(walletAddress)
-  const [name, setName] = useState('')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [name, setName] = useState(editGroup?.name ?? '')
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(editGroup?.entries.map((e) => e.assemblyId) ?? []),
+  )
+
+  const isEditing = !!editGroup
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -44,10 +54,29 @@ export function CreateBuildingGroupModal({
     onCreate(groupId)
   }
 
+  function handleUpdate() {
+    if (!editGroup || !updateGroup) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+
+    const entries: BuildingGroupEntry[] = []
+    for (const assembly of owned?.assemblies ?? []) {
+      if (selected.has(assembly.id)) {
+        const type: AssemblyType = assembly.type === 'assembly' ? 'ssu' : assembly.type as AssemblyType
+        entries.push({ assemblyId: assembly.id, assemblyType: type })
+      }
+    }
+
+    updateGroup(editGroup.id, trimmed, entries)
+    onUpdate?.()
+  }
+
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={onClose}>
       <div className="p-6 w-[500px] max-h-[80vh] overflow-y-auto space-y-4" style={S.panel} onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-sm font-semibold" style={{ color: theme.textPrimary }}>Create Building Group</h2>
+        <h2 className="text-sm font-semibold" style={{ color: theme.textPrimary }}>
+          {isEditing ? 'Edit Building Group' : 'Create Building Group'}
+        </h2>
 
         <input
           style={S.input}
@@ -113,12 +142,12 @@ export function CreateBuildingGroupModal({
             Cancel
           </button>
           <button
-            onClick={handleCreate}
+            onClick={isEditing ? handleUpdate : handleCreate}
             disabled={!name.trim()}
             className="disabled:opacity-50"
             style={S.btn}
           >
-            Create ({selected.size} buildings)
+            {isEditing ? `Save (${selected.size} buildings)` : `Create (${selected.size} buildings)`}
           </button>
         </div>
       </div>

@@ -52,7 +52,7 @@ export function Overview() {
   const { walletAddress, isConnected } = useConnection()
   const dAppKit = useDAppKit()
   const { data: owned } = useOwnedAssemblies(walletAddress)
-  const { groups, createGroup, addEntry: addBuildingEntry } = useBuildingGroups(walletAddress)
+  const { groups, createGroup, addEntry: addBuildingEntry, updateGroup } = useBuildingGroups(walletAddress)
   const { rules, createRule, updateRule, deleteRule } = useRules(walletAddress)
   const {
     policies, addGroupPolicy, removeGroupPolicy,
@@ -62,6 +62,7 @@ export function Overview() {
 
   const [showRuleModal, setShowRuleModal] = useState<string | null>(null)
   const [showGroupModal, setShowGroupModal] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<string | null>(null)
   const [applying, setApplying] = useState<string | null>(null)
   const [bindingId, setBindingId] = useState('')
   const [bindingOwner, setBindingOwner] = useState('')
@@ -574,6 +575,15 @@ export function Overview() {
                     {applying === 'all' ? 'Applying...' : 'Apply'}
                   </button>
                   <button
+                    onClick={() => setEditingGroup(policy.buildingGroupId)}
+                    className="text-xs"
+                    style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = theme.orange }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = theme.textSecondary }}
+                  >
+                    Edit
+                  </button>
+                  <button
                     onClick={() => removeGroupPolicy(policy.buildingGroupId)}
                     className="text-xs"
                     style={{ color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}
@@ -885,10 +895,23 @@ export function Overview() {
           onClose={() => setShowGroupModal(false)}
           createGroup={createGroup}
           addEntry={addBuildingEntry}
+          updateGroup={updateGroup}
           onCreate={(groupId) => {
             addGroupPolicy(groupId)
             setShowGroupModal(false)
           }}
+        />
+      )}
+
+      {editingGroup && (
+        <CreateBuildingGroupModal
+          onClose={() => setEditingGroup(null)}
+          createGroup={createGroup}
+          addEntry={addBuildingEntry}
+          updateGroup={updateGroup}
+          editGroup={groups.find((g) => g.id === editingGroup) ?? null}
+          onCreate={() => setEditingGroup(null)}
+          onUpdate={() => setEditingGroup(null)}
         />
       )}
     </div>
