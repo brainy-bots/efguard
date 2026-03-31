@@ -13,8 +13,7 @@ const TYPE_LABELS: Record<string, string> = {
   gate: 'Gate', turret: 'Turret', ssu: 'Smart Storage', assembly: 'Assembly', unknown: 'Unknown',
 }
 
-const DAPP_URL_GATE = 'https://brainy-bots.github.io/efguard/#/ingame'
-const DAPP_URL_SSU  = 'https://brainy-bots.github.io/efguard/#/storage'
+const DAPP_URL = 'https://brainy-bots.github.io/efguard/#/ingame'
 
 function supportsExtension(a: OwnedAssembly): boolean {
   // Turrets excluded — game server controls targeting calls, can't pass custom objects
@@ -166,10 +165,9 @@ export function Buildings() {
           ? `${WORLD_PKG}::turret::update_metadata_url`
           : `${WORLD_PKG}::storage_unit::update_metadata_url`
 
-      const dappUrl = assemblyType === 'ssu' ? DAPP_URL_SSU : DAPP_URL_GATE
       tx.moveCall({
         target: updateUrlTarget,
-        arguments: [tx.object(assembly.id), cap, tx.pure.string(dappUrl)],
+        arguments: [tx.object(assembly.id), cap, tx.pure.string(DAPP_URL)],
       })
 
       tx.moveCall({
