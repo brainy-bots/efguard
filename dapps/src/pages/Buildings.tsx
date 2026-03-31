@@ -23,7 +23,8 @@ function supportsExtension(a: OwnedAssembly): boolean {
 function hasEfGuardExtension(a: OwnedAssembly): boolean {
   const ext = a.details?.extension
   if (!ext) return false
-  return typeof ext === 'string' && ext.includes(EFGUARD_PKG)
+  const extStr = typeof ext === 'string' ? ext : typeof ext === 'object' ? JSON.stringify(ext) : ''
+  return extStr.includes(EFGUARD_PKG)
 }
 
 function hasOtherExtension(a: OwnedAssembly): boolean {
