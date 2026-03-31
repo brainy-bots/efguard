@@ -7,9 +7,27 @@
  * Uses useSmartObject() from dapp-kit to get the building the game passes via ?itemId=
  */
 import { useState, useEffect } from 'react'
-import { useConnection, useSmartObject } from '@evefrontier/dapp-kit'
+import { useConnection, useSmartObject, getObjectId } from '@evefrontier/dapp-kit'
 import { fetchPoliciesForAssembly, fetchAllBindings, type OnChainRule, type BindingSummary } from '../lib/chain-policies'
+import { TENANT } from '../env'
 import { AsciiBackground } from '../components/AsciiBackground'
+
+/** Extract itemId from anywhere in the URL — search params, hash params, or fragment */
+function extractItemId(): string | null {
+  // Check window.location.search (?itemId=123#/ingame)
+  const search = new URLSearchParams(window.location.search)
+  if (search.get('itemId')) return search.get('itemId')
+
+  // Check inside the hash (#/ingame?itemId=123)
+  const hash = window.location.hash
+  const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?')) : ''
+  if (hashQuery) {
+    const hashParams = new URLSearchParams(hashQuery)
+    if (hashParams.get('itemId')) return hashParams.get('itemId')
+  }
+
+  return null
+}
 
 const C = {
   bg: '#111318',
@@ -32,6 +50,7 @@ export function InGameView() {
   const { isConnected, handleConnect, hasEveVault } = useConnection()
   const { assembly, loading: assemblyLoading } = useSmartObject()
 
+  const [resolvedId, setResolvedId] = useState<string | null>(null)
   const [rules, setRules] = useState<OnChainRule[]>([])
   const [rulesLoading, setRulesLoading] = useState(false)
   const [bindings, setBindings] = useState<BindingSummary[]>([])
@@ -41,8 +60,20 @@ export function InGameView() {
     if (!isConnected && hasEveVault) handleConnect()
   }, [isConnected, hasEveVault, handleConnect])
 
+  // Try to resolve itemId ourselves if useSmartObject doesn't find it
+  useEffect(() => {
+    if (assembly) return // dapp-kit already resolved it
+    const itemId = extractItemId()
+    if (!itemId) return
+    getObjectId(itemId, TENANT)
+      .then((objId) => setResolvedId(objId))
+      .catch(console.error)
+  }, [assembly])
+
+  // Use whichever source resolved the assembly ID
+  const assemblyId = assembly?.id ?? resolvedId
+
   // Fetch on-chain rules when assembly is resolved
-  const assemblyId = assembly?.id ?? null
   useEffect(() => {
     if (!assemblyId) return
     let stale = false
@@ -57,20 +88,26 @@ export function InGameView() {
   // Fallback: if no specific assembly, load all bindings
   useEffect(() => {
     if (assemblyId || assemblyLoading) return
-    let stale = false
-    setBindingsLoading(true)
-    fetchAllBindings()
-      .then((b) => { if (!stale) setBindings(b) })
-      .catch(console.error)
-      .finally(() => { if (!stale) setBindingsLoading(false) })
-    return () => { stale = true }
+    // Wait a moment for our own resolution to complete
+    const timer = setTimeout(() => {
+      if (assemblyId) return
+      let stale = false
+      setBindingsLoading(true)
+      fetchAllBindings()
+        .then((b) => { if (!stale) setBindings(b) })
+        .catch(console.error)
+        .finally(() => { if (!stale) setBindingsLoading(false) })
+      return () => { stale = true }
+    }, 500)
+    return () => clearTimeout(timer)
   }, [assemblyId, assemblyLoading])
 
   const loading = assemblyLoading || rulesLoading || bindingsLoading
-  const name = assembly?.name ?? 'Building'
+  const name = assembly?.name ?? (assemblyId ? 'Building' : null)
   const status = assembly?.state === 'online' ? 'ONLINE' : assembly ? 'OFFLINE' : null
   const raw = assembly?._raw?.contents?.json as Record<string, any> | undefined
   const hasExtension = !!raw?.extension
+  const hasSpecificBuilding = !!assemblyId && rules.length > 0
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.textPrimary, fontFamily: "'Segoe UI', 'Arial Narrow', Arial, sans-serif", fontSize: '11px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -91,7 +128,31 @@ export function InGameView() {
             </div>
           )}
 
-          {isConnected && !assembly && !loading && (
+          {/* Resolved via our own parsing — show rules without full assembly details */}
+          {isConnected && !assembly && hasSpecificBuilding && !loading && (
+            <div style={{ ...panelStyle, marginBottom: 8 }}>
+              <div style={headerStyle}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Building</span>
+                  <span style={{ color: C.orange }}>PROTECTED</span>
+                </div>
+              </div>
+              {rules.map((r, i) => (
+                <div key={r.conditionId} style={{ ...rowStyle, ...(i === rules.length - 1 ? { borderBottom: 'none' } : {}) }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: C.textMuted, width: '16px' }}>{String(i + 1).padStart(2, '0')}</span>
+                    <span style={{ color: C.textPrimary, fontSize: '11px' }}>{r.label}</span>
+                  </div>
+                  <span style={{ color: r.effect === 'Allow' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    {r.effect}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* No specific building — show all bindings */}
+          {isConnected && !assembly && !hasSpecificBuilding && !loading && (
             <>
               {bindings.flatMap((b) =>
                 b.policies.filter((p) => p.rules.length > 0).map((p) => (
@@ -124,9 +185,6 @@ export function InGameView() {
                   </div>
                 </div>
               )}
-              <div style={{ padding: '8px', fontSize: '9px', color: C.textMuted, wordBreak: 'break-all', opacity: 0.5 }}>
-                search: {window.location.search || '(empty)'} | hash: {window.location.hash} | assemblyId: {assemblyId ?? '(none)'}
-              </div>
             </>
           )}
 
