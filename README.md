@@ -247,6 +247,7 @@ sui client publish --gas-budget 200000000
 | [docs/DATA_MODEL.md](./docs/DATA_MODEL.md) | On-chain vs DApp data models and why they differ |
 | [docs/MOVE_API.md](./docs/MOVE_API.md) | Full API reference with PTB examples |
 | [docs/TESTING.md](./docs/TESTING.md) | Test coverage matrix and how to run tests |
+| [docs/LIMITATIONS.md](./docs/LIMITATIONS.md) | Known limitations and suggestions for EVE Frontier developers |
 
 ## Roadmap
 
