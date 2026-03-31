@@ -4,9 +4,10 @@
  *
  * Reads all data from chain (no localStorage dependency), so it works
  * identically in the in-game browser and regular browsers.
+ * Uses useSmartObject() from dapp-kit to get the building the game passes via ?itemId=
  */
 import { useState, useEffect } from 'react'
-import { useConnection, executeGraphQLQuery } from '@evefrontier/dapp-kit'
+import { useConnection, useSmartObject } from '@evefrontier/dapp-kit'
 import { fetchPoliciesForAssembly, type OnChainRule } from '../lib/chain-policies'
 import { AsciiBackground } from '../components/AsciiBackground'
 
@@ -27,65 +28,33 @@ const panelStyle = { background: C.panelBg, border: `1px solid ${C.border}`, bac
 const headerStyle = { background: C.headerBg, borderBottom: `1px solid ${C.border}`, color: C.orange, fontSize: '10px', letterSpacing: '0.12em', fontWeight: 700, textTransform: 'uppercase' as const, padding: '6px 10px' }
 const rowStyle = { borderBottom: `1px solid ${C.border}`, padding: '5px 10px', display: 'flex' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const }
 
-interface AssemblyInfo {
-  name: string | null
-  description: string | null
-  status: string | null
-  hasExtension: boolean
-}
-
-async function fetchAssemblyInfo(assemblyId: string): Promise<AssemblyInfo | null> {
-  try {
-    const res = await executeGraphQLQuery<{
-      object: { asMoveObject: { contents: { json: any; type: { repr: string } } } }
-    }>(
-      `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json type { repr } } } } }`,
-      { id: assemblyId },
-    )
-    const json = res.data?.object?.asMoveObject?.contents?.json
-    if (!json) return null
-    const metadata = json.metadata ?? {}
-    return {
-      name: metadata.name ?? null,
-      description: metadata.description ?? null,
-      status: json.status?.is_online ? 'ONLINE' : 'OFFLINE',
-      hasExtension: !!json.extension,
-    }
-  } catch {
-    return null
-  }
-}
-
-export function InGameView({ itemId }: { itemId: string | null }) {
+export function InGameView() {
   const { isConnected, handleConnect, hasEveVault } = useConnection()
+  const { assembly, loading: assemblyLoading } = useSmartObject()
 
-  const [assembly, setAssembly] = useState<AssemblyInfo | null>(null)
   const [rules, setRules] = useState<OnChainRule[]>([])
-  const [loading, setLoading] = useState(true)
+  const [rulesLoading, setRulesLoading] = useState(false)
 
   useEffect(() => {
     if (!isConnected && hasEveVault) handleConnect()
   }, [isConnected, hasEveVault, handleConnect])
 
+  // Fetch on-chain rules when assembly is resolved
+  const assemblyId = assembly?.id ?? null
   useEffect(() => {
-    if (!itemId) { setLoading(false); return }
+    if (!assemblyId) return
+    setRulesLoading(true)
+    fetchPoliciesForAssembly(assemblyId)
+      .then(setRules)
+      .catch(console.error)
+      .finally(() => setRulesLoading(false))
+  }, [assemblyId])
 
-    let cancelled = false
-    setLoading(true)
-
-    Promise.all([
-      fetchAssemblyInfo(itemId),
-      fetchPoliciesForAssembly(itemId),
-    ]).then(([info, chainRules]) => {
-      if (cancelled) return
-      setAssembly(info)
-      setRules(chainRules)
-    }).catch(console.error).finally(() => {
-      if (!cancelled) setLoading(false)
-    })
-
-    return () => { cancelled = true }
-  }, [itemId])
+  const loading = assemblyLoading || rulesLoading
+  const name = assembly?.name ?? 'Building'
+  const status = assembly?.state === 'online' ? 'ONLINE' : assembly ? 'OFFLINE' : null
+  const raw = assembly?._raw?.contents?.json as Record<string, any> | undefined
+  const hasExtension = !!raw?.extension
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.textPrimary, fontFamily: "'Segoe UI', 'Arial Narrow', Arial, sans-serif", fontSize: '11px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -106,7 +75,7 @@ export function InGameView({ itemId }: { itemId: string | null }) {
             </div>
           )}
 
-          {isConnected && !itemId && !loading && (
+          {isConnected && !assembly && !loading && (
             <div style={panelStyle}>
               <div style={headerStyle}>ef guard</div>
               <div style={{ padding: '20px', color: C.textMuted, textAlign: 'center' }}>
@@ -116,23 +85,23 @@ export function InGameView({ itemId }: { itemId: string | null }) {
             </div>
           )}
 
-          {isConnected && !loading && itemId && (
+          {isConnected && assembly && !loading && (
             <>
               <div style={{ ...panelStyle, marginBottom: 8 }}>
                 <div style={headerStyle}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>{assembly?.name ?? 'Building'}</span>
+                    <span>{name}</span>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <span style={{ color: assembly?.status === 'ONLINE' ? C.green : C.red }}>
-                        {assembly?.status ?? '?'}
+                      <span style={{ color: status === 'ONLINE' ? C.green : C.red }}>
+                        {status ?? '?'}
                       </span>
-                      {assembly?.hasExtension && (
+                      {hasExtension && (
                         <span style={{ color: C.orange }}>PROTECTED</span>
                       )}
                     </div>
                   </div>
                 </div>
-                {assembly?.description && (
+                {assembly.description && (
                   <div style={{ ...rowStyle, borderBottom: 'none' }}>
                     <span style={{ color: C.textSecondary }}>{assembly.description}</span>
                   </div>
@@ -155,7 +124,7 @@ export function InGameView({ itemId }: { itemId: string | null }) {
                   ))
                 ) : (
                   <div style={{ padding: '12px 10px', color: C.textMuted }}>
-                    {assembly?.hasExtension ? 'No rules configured — all access denied by default.' : 'No ef guard extension installed.'}
+                    {hasExtension ? 'No rules configured — all access denied by default.' : 'No ef guard extension installed.'}
                   </div>
                 )}
               </div>
