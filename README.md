@@ -57,6 +57,7 @@ The core innovation: **conditions are separate modules** that anyone can create.
 | `condition_tribe` | Character belongs to a specific tribe | No — reads EvalContext |
 | `condition_character` | Character matches a specific game ID | No — reads EvalContext |
 | `condition_everyone` | Always passes (catch-all) | No |
+| `condition_min_balance` | Player holds a minimum coin balance | Yes — passes `&Coin<T>` reference |
 | `condition_token_holder` | Player's wallet holds a specific NFT/token type | Yes — passes `&T` reference |
 | `condition_attestation` | Signed attestation from a trusted server | Yes — passes signature bytes |
 
@@ -131,7 +132,7 @@ Based on the [EVE Frontier builder-scaffold](https://github.com/evefrontier/buil
 
 | Area | Purpose |
 |------|---------|
-| [move-contracts/ef_guard/](./move-contracts/ef_guard/) | Sui Move contracts (10 modules, 89 unit tests) |
+| [move-contracts/ef_guard/](./move-contracts/ef_guard/) | Sui Move contracts (11 modules, 89 unit tests) |
 | [examples/smart-gate/](./examples/smart-gate/) | Example: scaffold gate extension using ef_guard |
 | [dapps/](./dapps/) | React DApp: wallet connection, assembly discovery, policy management |
 | [ts-scripts/](./ts-scripts/) | TypeScript scripts for deployment and on-chain integration tests |
@@ -140,7 +141,7 @@ Based on the [EVE Frontier builder-scaffold](https://github.com/evefrontier/buil
 
 ## Move contracts
 
-Ten modules:
+Eleven modules:
 
 | Module | Purpose |
 |--------|---------|
@@ -148,6 +149,7 @@ Ten modules:
 | `condition_tribe` | Condition: tribe membership check |
 | `condition_character` | Condition: specific player check |
 | `condition_everyone` | Condition: catch-all (always passes) |
+| `condition_min_balance` | Condition: minimum coin balance (generic `<T>`) |
 | `condition_token_holder` | Condition: NFT/token ownership (generic `<T: key>`) |
 | `condition_attestation` | Condition: signed attestation from trusted server (ed25519) |
 | `gate_extension` | Typed-witness gate extension: issues `JumpPermit` on Allow |
@@ -157,17 +159,35 @@ Ten modules:
 
 ## DApp
 
-React application for managing access policies across many buildings:
+React application for managing access policies across many buildings. **Live on Stillness** at [brainy-bots.github.io/efguard](https://brainy-bots.github.io/efguard/).
 
+### Admin Panel (web browser)
 - **EVE Vault** wallet connection (zkLogin)
 - **Assembly auto-discovery** via the Character ownership chain
-- **Building groups** — organize assemblies into named sets
+- **Building groups** — organize assemblies into named sets, editable (rename, add/remove buildings)
 - **Policy overview** — single page to manage all rules across all building groups
-- **Tribe search** — autocomplete from the EVE Frontier datahub API
+- **Tribe search** — autocomplete from the EVE Frontier datahub API (375+ tribes, multi-word fuzzy matching)
+- **Player verification** — look up players by game ID before adding rules
 - **Drag-to-reorder** rules (first match wins on-chain)
 - **Enable/disable** rules without removing them
-- **Apply** — writes rules to all assemblies in a group with one transaction (Sui PTB)
+- **Apply All** — writes rules to all assemblies across all groups in one batch
+- **Blocklist** — direct on-chain add/remove, overrides all rules
+- **Install ef_guard** — one-click extension install per building with auto-registration
+- **Update URL** — detects outdated DApp URLs and updates without reinstalling
+- **Extension detection** — shows current extension name, detects old ef_guard versions
+- **Toast notifications** — non-blocking success/error feedback for all transactions
 - **Single env var** to switch between game servers (Stillness, Utopia)
+
+### In-Game View (embedded browser)
+- **Reads directly from chain** — no localStorage dependency, works for any player
+- **Per-building rules** — shows all access rules for the specific building via `?itemId=` URL param
+- **Fallback view** — shows all protected buildings and their rules when no specific building is identified
+- **Tribe and player name resolution** — displays human-readable names instead of IDs
+- **EVE Frontier theme** — dark UI with animated ASCII background matching the game aesthetic
+
+### Custom Conditions (for developers)
+
+Any developer can create new condition types without modifying ef_guard. The DApp shows advanced conditions (min balance, NFT holder, attestation) in the rule creation UI with descriptions of what they do. Currently these require CLI/script setup — DApp configuration is planned.
 
 ## Architecture
 
@@ -253,17 +273,21 @@ sui client publish --gas-budget 200000000
 
 ### Implemented
 - Pluggable condition system with EvalContext
-- 5 condition modules (tribe, character, everyone, token holder, attestation)
+- 6 condition modules (tribe, character, everyone, min balance, token holder, attestation)
 - Per-assembly policies with first-match-wins evaluation
 - Blocklist override
-- Gate, turret, and SSU extensions
-- React DApp with assembly discovery and policy management
+- Gate and SSU extensions (turret extension exists but game server limitations prevent full use — [see LIMITATIONS.md](./docs/LIMITATIONS.md))
+- React DApp with admin panel + in-game view
+- Deployed and working on Stillness testnet
 - 103 tests (89 unit + 14 on-chain integration)
 
 ### Next
+- **Single-transaction Apply** — collapse the 2-TX flow into one PTB ([#5](https://github.com/brainy-bots/efguard/issues/5))
 - **ZK proof conditions** — trustless off-chain data verification via groth16 ([#3](https://github.com/brainy-bots/efguard/issues/3))
-- **Rule Groups** — named collections of rules with accordion UI ([#1](https://github.com/brainy-bots/efguard/issues/1))
-- **Transaction splitting** — auto-batch large policy applies ([#2](https://github.com/brainy-bots/efguard/issues/2))
+- **Centralized transaction service** — single source of truth for blockchain operations ([#8](https://github.com/brainy-bots/efguard/issues/8))
+- **Optimize attestation encoding** — single BCS tuple instead of 4 separate vectors ([#6](https://github.com/brainy-bots/efguard/issues/6))
+- **Optional event emissions** — reduce gas on success path ([#7](https://github.com/brainy-bots/efguard/issues/7))
+- **Building group deletion cleanup** — remove on-chain policies when a group is deleted ([#4](https://github.com/brainy-bots/efguard/issues/4))
 - **Frontier Market** — vending machine powered by ef_guard ([brainy-bots/frontier-market](https://github.com/brainy-bots/frontier-market))
 - **Community conditions** — marketplace for condition modules built by other developers
 
@@ -278,6 +302,10 @@ The condition plugin system means the community builds the conditions. ef_guard 
 Built for the [EVE Frontier x Sui Hackathon 2026](https://deepsurge.xyz/evefrontier2026) — *"A Toolkit for Civilization."*
 
 ef_guard is the access control toolkit that every other toolkit builds on.
+
+**Deployed on Stillness:**
+- Package: `0x8cc4acad0cb8355ac6d2bdc810d9bf0b830966a259105e30e0aeee4216a42217`
+- DApp: [brainy-bots.github.io/efguard](https://brainy-bots.github.io/efguard/)
 
 ## License
 
