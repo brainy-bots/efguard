@@ -38,12 +38,16 @@ function getExtensionDisplayName(a: OwnedAssembly): string {
 }
 
 function hasEfGuardExtension(a: OwnedAssembly): boolean {
-  return getExtensionStr(a).includes(EFGUARD_PKG)
+  const ext = getExtensionStr(a)
+  // Compare without 0x prefix — on-chain value may omit it
+  const pkgNorm = EFGUARD_PKG.replace(/^0x/, '')
+  return ext.includes(pkgNorm)
 }
 
 function isOldEfGuard(a: OwnedAssembly): boolean {
   const ext = getExtensionStr(a)
-  return !ext.includes(EFGUARD_PKG) && ext.includes('EfGuard')
+  const pkgNorm = EFGUARD_PKG.replace(/^0x/, '')
+  return !ext.includes(pkgNorm) && ext.includes('EfGuard')
 }
 
 function hasOtherExtension(a: OwnedAssembly): boolean {
