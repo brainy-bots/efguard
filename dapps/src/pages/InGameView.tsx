@@ -82,6 +82,11 @@ export function InGameView() {
                 This building has ef guard access control installed.
                 Interact with a specific building to see its rules.
               </div>
+              <div style={{ padding: '10px', fontSize: '9px', color: C.textMuted, wordBreak: 'break-all' }}>
+                <div>search: {window.location.search || '(empty)'}</div>
+                <div>hash: {window.location.hash || '(empty)'}</div>
+                <div>href: {window.location.href}</div>
+              </div>
             </div>
           )}
 
