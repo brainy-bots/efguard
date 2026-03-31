@@ -6,52 +6,17 @@ import { useDAppKit } from '@mysten/dapp-kit-react'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
 import { useRules } from '../hooks/useRules'
 import { usePolicies, type PolicyEntry } from '../hooks/usePolicies'
-import { useOwnedAssemblies, displayName } from '../hooks/useOwnedAssemblies'
 // tx-builders used inline in handleApply
-import type { RuleTarget, RuleEffect } from '../types'
+import type { RuleTarget } from '../types'
 import { CreateRuleModal } from '../components/CreateRuleModal'
 import { CreateBuildingGroupModal } from '../components/CreateBuildingGroupModal'
 import { HelpPanel } from '../components/HelpPanel'
 import { theme, S } from '../lib/theme'
 
-// ── Visitor access evaluation (client-side preview) ─────────────────────────
-
-interface AccessResult {
-  effect: RuleEffect
-  matchedRuleLabel: string
-}
-
-function evaluateAccess(
-  visitorTribeId: number | null,
-  visitorCharId: string | null,
-  entries: PolicyEntry[],
-  getRule: (id: string) => { target: RuleTarget; label: string } | undefined,
-): AccessResult | null {
-  const sorted = [...entries].filter((e) => e.enabled).sort((a, b) => a.order - b.order)
-
-  for (const entry of sorted) {
-    const rule = getRule(entry.ruleId)
-    if (!rule) continue
-
-    const { target } = rule
-    if (target.type === 'everyone') {
-      return { effect: entry.effect, matchedRuleLabel: rule.label }
-    }
-    if (target.type === 'tribe' && visitorTribeId !== null && target.tribe_id === visitorTribeId) {
-      return { effect: entry.effect, matchedRuleLabel: rule.label }
-    }
-    if (target.type === 'character' && visitorCharId !== null && target.char_game_id === visitorCharId) {
-      return { effect: entry.effect, matchedRuleLabel: rule.label }
-    }
-  }
-
-  return null // no matching rule
-}
 
 export function Overview() {
   const { walletAddress, isConnected } = useConnection()
   const dAppKit = useDAppKit()
-  const { data: owned } = useOwnedAssemblies(walletAddress)
   const { groups, createGroup, addEntry: addBuildingEntry, updateGroup } = useBuildingGroups(walletAddress)
   const { rules, createRule, updateRule, deleteRule } = useRules(walletAddress)
   const {
@@ -66,7 +31,6 @@ export function Overview() {
   const [applying, setApplying] = useState<string | null>(null)
   const [bindingId, setBindingId] = useState('')
   const [bindingOwner, setBindingOwner] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
 
   // Auto-discover existing binding: check localStorage first, then chain
   useEffect(() => {
@@ -97,8 +61,6 @@ export function Overview() {
       }
     }).catch(console.error)
   }, [walletAddress, bindingId])
-  const [visitorTribeId, setVisitorTribeId] = useState<string>('')
-  const [visitorCharId, setVisitorCharId] = useState<string>('')
 
   // Drag state
   const dragItem = useRef<{ groupId: string; entryId: string } | null>(null)
@@ -431,116 +393,10 @@ export function Overview() {
   const managedGroupIds = new Set(policies.map((p) => p.buildingGroupId))
   const unmanagedGroups = groups.filter((g) => !managedGroupIds.has(g.id))
 
-  // Parse visitor IDs for access preview
-  const parsedVisitorTribe = visitorTribeId ? parseInt(visitorTribeId, 10) : null
-  const parsedVisitorChar = visitorCharId || null
-
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <h1 className="text-xl font-bold" style={{ color: theme.textPrimary }}>Access Policies</h1>
 
-      {/* Advanced: Binding ID / Owner — collapsible */}
-      <div style={S.panel}>
-        <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="w-full flex items-center justify-between px-4 py-2 text-xs transition-colors"
-          style={{ color: theme.textSecondary }}
-        >
-          <span className="font-semibold uppercase tracking-wider">Advanced</span>
-          <span className="text-[10px]">{showAdvanced ? '\u25B2' : '\u25BC'}</span>
-        </button>
-
-        {showAdvanced && (
-          <div className="px-4 pb-4 pt-3 space-y-3" style={{ borderTop: `1px solid ${theme.border}` }}>
-            <p className="text-[10px]" style={{ color: theme.textSecondary }}>These IDs link to your on-chain access control configuration.</p>
-            <div className="flex items-center gap-2 text-xs">
-              <label style={{ color: theme.textSecondary }}>Binding ID:</label>
-              <input
-                className="font-mono w-64"
-                style={S.input}
-                placeholder="0x..."
-                value={bindingId}
-                onChange={(e) => setBindingId(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              <label style={{ color: theme.textSecondary }}>Binding owner:</label>
-              <input
-                className="font-mono w-64"
-                style={S.input}
-                placeholder="0x... (leave blank if you are the owner)"
-                value={bindingOwner}
-                onChange={(e) => setBindingOwner(e.target.value)}
-              />
-              {bindingOwner && !isOwner && (
-                <span className="text-[10px]" style={{ color: '#facc15' }}>Read-only (visitor)</span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Visitor access check (shown when not owner) */}
-      {!isOwner && (
-        <div className="p-4 space-y-3" style={S.panel}>
-          <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: theme.textSecondary }}>Check your access</h2>
-          <div className="flex items-center gap-3 text-xs">
-            <label style={{ color: theme.textSecondary }}>Your tribe ID:</label>
-            <input
-              className="font-mono w-32"
-              style={S.input}
-              placeholder="e.g. 42"
-              value={visitorTribeId}
-              onChange={(e) => setVisitorTribeId(e.target.value)}
-            />
-            <label style={{ color: theme.textSecondary }}>Your char game ID:</label>
-            <input
-              className="font-mono w-40"
-              style={S.input}
-              placeholder="e.g. 123456"
-              value={visitorCharId}
-              onChange={(e) => setVisitorCharId(e.target.value)}
-            />
-          </div>
-
-          {(parsedVisitorTribe !== null || parsedVisitorChar) && policies.length > 0 && (
-            <div className="space-y-2">
-              {policies.map((policy) => {
-                const group = groups.find((g) => g.id === policy.buildingGroupId)
-                const groupName = group?.name ?? 'Unknown group'
-                const result = evaluateAccess(
-                  parsedVisitorTribe,
-                  parsedVisitorChar,
-                  policy.entries,
-                  (id) => getRule(id),
-                )
-
-                return (
-                  <div key={policy.buildingGroupId} className="flex items-center gap-3 text-xs">
-                    <span style={{ color: theme.textPrimary }}>{groupName}:</span>
-                    {result ? (
-                      <>
-                        <span
-                          className="px-2 py-0.5 font-semibold text-[10px] uppercase"
-                          style={{
-                            background: result.effect === 'Allow' ? 'rgba(68,184,64,0.2)' : 'rgba(200,48,48,0.2)',
-                            color: result.effect === 'Allow' ? theme.green : theme.red,
-                          }}
-                        >
-                          {result.effect === 'Allow' ? 'Allowed' : 'Denied'}
-                        </span>
-                        <span style={{ color: theme.textSecondary }}>matched: {result.matchedRuleLabel}</span>
-                      </>
-                    ) : (
-                      <span style={{ color: theme.textSecondary }}>No matching rule (default deny)</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Help panel (collapsed by default) */}
       <HelpPanel />
@@ -752,30 +608,7 @@ export function Overview() {
         </div>
       )}
 
-      {/* Unassigned buildings */}
-      {owned && owned.assemblies.length > 0 && (
-        <div className="p-4" style={S.panel}>
-          <h2 style={S.header} className="mb-2">
-            All Buildings ({owned.assemblies.length})
-          </h2>
-          <div className="space-y-1">
-            {owned.assemblies.map((a) => (
-              <div key={a.id} className="flex items-center justify-between text-xs py-1" title={a.id}>
-                <span style={{ color: theme.textPrimary }}>{displayName(a)}</span>
-                <span
-                  className="text-[10px] uppercase font-semibold"
-                  style={{
-                    color: a.details?.status === 'ONLINE' ? theme.green :
-                      a.details?.status === 'OFFLINE' ? theme.red : theme.textSecondary,
-                  }}
-                >
-                  {a.details?.status ?? '?'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Buildings list removed — use the Buildings page instead */}
 
       {/* Blocklist — direct on-chain, no conditions needed */}
       {isOwner && bindingId && (

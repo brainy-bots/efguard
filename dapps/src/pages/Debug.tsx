@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useConnection, executeGraphQLQuery, getOwnedObjectsByType } from '@evefrontier/dapp-kit'
-import { WORLD_PKG } from '../env'
+import { WORLD_PKG, EFGUARD_PKG } from '../env'
+import { storageKey } from '../lib/storage'
 import { theme, S } from '../lib/theme'
 
 interface DebugState {
@@ -110,7 +111,8 @@ export function Debug() {
       <Section title="Wallet">
         <KV label="Address" value={state.walletAddress} />
         <KV label="WORLD_PKG" value={WORLD_PKG} />
-        <KV label="VITE_EVE_WORLD_PACKAGE_ID" value={import.meta.env.VITE_EVE_WORLD_PACKAGE_ID ?? '(not set)'} />
+        <KV label="EFGUARD_PKG" value={EFGUARD_PKG} />
+        <KV label="Binding ID" value={localStorage.getItem(storageKey('binding-id', state.walletAddress ?? undefined)) ?? '(not found)'} />
       </Section>
 
       <Section title="PlayerProfile">
