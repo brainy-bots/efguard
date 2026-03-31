@@ -6,7 +6,7 @@ import { useDAppKit } from '@mysten/dapp-kit-react'
 import { Transaction } from '@mysten/sui/transactions'
 import { useOwnedAssemblies, displayName, type OwnedAssembly } from '../hooks/useOwnedAssemblies'
 import type { AssemblyType } from '../types'
-import { EFGUARD_PKG, WORLD_PKG, TENANT } from '../env'
+import { EFGUARD_PKG, WORLD_PKG } from '../env'
 import { useToast } from '../components/Toast'
 import { theme, S } from '../lib/theme'
 
@@ -27,8 +27,7 @@ async function getDappUrlForAssembly(assemblyId: string): Promise<string> {
     )
     const key = res.data?.object?.asMoveObject?.contents?.json?.key
     if (key?.item_id) {
-      const tenant = key.tenant || TENANT
-      return `${DAPP_URL_BASE}?itemId=${key.item_id}&tenant=${tenant}#/ingame`
+      return `${DAPP_URL_BASE}?itemId=${key.item_id}#/ingame`
     }
   } catch { /* fall back */ }
   return DAPP_URL
