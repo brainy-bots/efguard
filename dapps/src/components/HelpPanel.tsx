@@ -45,8 +45,7 @@ export function HelpPanel() {
               <li><span style={{ color: theme.textPrimary }}>Gates:</span> Controls who can jump through your gates</li>
               <li>
                 <span style={{ color: theme.textPrimary }}>Turrets:</span>{' '}
-                <span style={{ color: theme.red }}>(not supported)</span>{' '}
-                The game server controls turret targeting and cannot pass custom parameters to extensions
+                <span style={{ color: theme.orange }}>(coming soon)</span>
               </li>
               <li><span style={{ color: theme.textPrimary }}>Smart Storage:</span> Controls who can deposit or withdraw items from your storage</li>
             </ul>
