@@ -31,22 +31,21 @@ export function Overview() {
   const [showGroupModal, setShowGroupModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<string | null>(null)
   const [applying, setApplying] = useState<string | null>(null)
-  const [bindingId, setBindingId] = useState('')
-  const [bindingOwner, setBindingOwner] = useState('')
+  const [bindingId, setBindingId] = useState(() => {
+    if (!walletAddress) return ''
+    return localStorage.getItem(storageKey('binding-id', walletAddress)) ?? ''
+  })
+  const [bindingOwner, setBindingOwner] = useState(() => {
+    if (!walletAddress) return ''
+    return localStorage.getItem(storageKey('binding-id', walletAddress)) ? walletAddress : ''
+  })
 
-  // Auto-discover existing binding: check localStorage first, then chain
+  // Discover binding from chain if not found in localStorage
   useEffect(() => {
-    if (!walletAddress || bindingId) return
+    if (!walletAddress) return
+    // Already found via localStorage initializer
+    if (localStorage.getItem(storageKey('binding-id', walletAddress))) return
 
-    // Check localStorage (set by Buildings page on install)
-    const saved = localStorage.getItem(storageKey('binding-id', walletAddress))
-    if (saved) {
-      setBindingId(saved)
-      setBindingOwner(walletAddress)
-      return
-    }
-
-    // Fall back to chain query
     const bindingType = `${EFGUARD_PKG}::assembly_binding::AssemblyBinding`
     executeGraphQLQuery<{
       objects: { nodes: Array<{ address: string; asMoveObject: { contents: { json: { owner: string } } } }> }
@@ -62,7 +61,7 @@ export function Overview() {
         localStorage.setItem(storageKey('binding-id', walletAddress), mine.address)
       }
     }).catch(console.error)
-  }, [walletAddress]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [walletAddress])
 
   // Drag state
   const dragItem = useRef<{ groupId: string; entryId: string } | null>(null)
