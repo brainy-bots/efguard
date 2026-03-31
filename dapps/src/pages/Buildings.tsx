@@ -7,6 +7,7 @@ import { Transaction } from '@mysten/sui/transactions'
 import { useOwnedAssemblies, displayName, type OwnedAssembly } from '../hooks/useOwnedAssemblies'
 import type { AssemblyType } from '../types'
 import { EFGUARD_PKG, WORLD_PKG } from '../env'
+import { useToast } from '../components/Toast'
 import { theme, S } from '../lib/theme'
 
 const TYPE_LABELS: Record<string, string> = {
@@ -58,6 +59,7 @@ export function Buildings() {
   const { walletAddress, isConnected } = useConnection()
   const dAppKit = useDAppKit()
   const qc = useQueryClient()
+  const toast = useToast()
   const { data: owned, isLoading } = useOwnedAssemblies(walletAddress)
   const [installing, setInstalling] = useState<string | null>(null)
   const [result, setResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null)
@@ -139,9 +141,12 @@ export function Buildings() {
 
       await dAppKit.signAndExecuteTransaction({ transaction: tx })
       setResult({ id: assembly.id, ok: true, msg: 'DApp URL updated!' })
+      toast.success('DApp URL updated!')
       await qc.invalidateQueries({ queryKey: ['owned-assemblies'] })
     } catch (err) {
-      setResult({ id: assembly.id, ok: false, msg: err instanceof Error ? err.message : String(err) })
+      const msg = err instanceof Error ? err.message : String(err)
+      setResult({ id: assembly.id, ok: false, msg })
+      toast.error(`URL update failed: ${msg}`)
     } finally {
       setInstalling(null)
     }
@@ -322,9 +327,12 @@ export function Buildings() {
       }
 
       setResult({ id: assembly.id, ok: true, msg: 'ef_guard installed!' })
+      toast.success('ef_guard installed successfully!')
       await qc.invalidateQueries({ queryKey: ['owned-assemblies'] })
     } catch (err) {
-      setResult({ id: assembly.id, ok: false, msg: err instanceof Error ? err.message : String(err) })
+      const msg = err instanceof Error ? err.message : String(err)
+      setResult({ id: assembly.id, ok: false, msg })
+      toast.error(`Install failed: ${msg}`)
     } finally {
       setInstalling(null)
     }

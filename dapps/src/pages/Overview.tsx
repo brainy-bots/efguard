@@ -11,12 +11,14 @@ import type { RuleTarget } from '../types'
 import { CreateRuleModal } from '../components/CreateRuleModal'
 import { CreateBuildingGroupModal } from '../components/CreateBuildingGroupModal'
 import { HelpPanel } from '../components/HelpPanel'
+import { useToast } from '../components/Toast'
 import { theme, S } from '../lib/theme'
 
 
 export function Overview() {
   const { walletAddress, isConnected } = useConnection()
   const dAppKit = useDAppKit()
+  const toast = useToast()
   const { groups, createGroup, addEntry: addBuildingEntry, updateGroup } = useBuildingGroups(walletAddress)
   const { rules, createRule, updateRule, deleteRule } = useRules(walletAddress)
   const {
@@ -259,7 +261,7 @@ export function Overview() {
 
       // TX2: Set policies using the local conditionIdMap
       if (!currentBindingId) {
-        alert('Failed to create binding')
+        toast.error('Failed to create binding')
         return
       }
 
@@ -340,9 +342,10 @@ export function Overview() {
       await dAppKit.signAndExecuteTransaction({ transaction: tx2 })
 
       for (const policy of dirtyPolicies) markClean(policy.buildingGroupId)
+      toast.success('Policies applied on-chain!')
     } catch (err) {
       console.error('Apply failed:', err)
-      alert(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`Apply failed: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setApplying(null)
     }
@@ -683,10 +686,10 @@ export function Overview() {
                       arguments: [tx.object(bindingId), tx.pure.u64(gameId)],
                     })
                     await dAppKit.signAndExecuteTransaction({ transaction: tx })
-                    alert('Player blocklisted!')
+                    toast.success('Player blocklisted!')
                     input.value = ''
                   } catch (err) {
-                    alert(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+                    toast.error(`Failed: ${err instanceof Error ? err.message : String(err)}`)
                   }
                 }}
               >
@@ -707,10 +710,10 @@ export function Overview() {
                       arguments: [tx.object(bindingId), tx.pure.u64(gameId)],
                     })
                     await dAppKit.signAndExecuteTransaction({ transaction: tx })
-                    alert('Player removed from blocklist!')
+                    toast.success('Player removed from blocklist!')
                     input.value = ''
                   } catch (err) {
-                    alert(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+                    toast.error(`Failed: ${err instanceof Error ? err.message : String(err)}`)
                   }
                 }}
               >
