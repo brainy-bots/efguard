@@ -402,9 +402,9 @@ export function Buildings() {
                         <p className="text-[10px] mt-0.5" style={{ color: theme.textSecondary }}>{d.description}</p>
                       )}
                       {d?.dappUrl && (
-                        <p className="text-[10px] mt-0.5" style={{ color: d.dappUrl?.includes(DAPP_URL_BASE) ? theme.textMuted : theme.orange }}>
+                        <p className="text-[10px] mt-0.5" style={{ color: d.dappUrl?.includes('itemId=') ? theme.textMuted : theme.orange }}>
                           DApp: {d.dappUrl}
-                          {!d.dappUrl?.includes(DAPP_URL_BASE) && ' (outdated)'}
+                          {!d.dappUrl?.includes('itemId=') && ' (needs update)'}
                         </p>
                       )}
                     </div>
@@ -431,7 +431,7 @@ export function Buildings() {
                           {isInstalling ? 'Installing...' : hasEfGuardExtension(a) ? 'Reinstall' : isOldEfGuard(a) ? 'Upgrade ef_guard' : hasOtherExtension(a) ? 'Replace with ef_guard' : 'Install ef_guard'}
                         </button>
                       )}
-                      {d?.dappUrl && !d.dappUrl.includes(DAPP_URL_BASE) && hasEfGuardExtension(a) && (
+                      {d?.dappUrl && !d.dappUrl.includes('itemId=') && hasEfGuardExtension(a) && (
                         <button
                           onClick={() => handleUpdateUrl(a)}
                           disabled={isInstalling}
