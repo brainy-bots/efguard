@@ -382,9 +382,46 @@ export function Overview() {
   // ── Render ────────────────────────────────────────────────────────────
   if (!isConnected) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
-        <h1 className="text-xl font-bold mb-4" style={{ color: theme.textPrimary }}>ef_guard</h1>
-        <p style={{ color: theme.textSecondary }}>Connect your wallet to manage access policies.</p>
+      <div className="p-6 max-w-2xl mx-auto" style={{ textAlign: 'center', paddingTop: '80px' }}>
+        <img src="./logo.png" alt="ef guard" style={{ height: '96px', margin: '0 auto 16px' }} />
+        <h1 className="text-2xl font-bold mb-2" style={{ color: theme.textPrimary, letterSpacing: '0.08em' }}>EF GUARD</h1>
+        <p className="text-sm mb-6" style={{ color: theme.orange, fontWeight: 600 }}>
+          Access Control for EVE Frontier
+        </p>
+
+        <p className="text-sm mb-4" style={{ color: theme.textSecondary, lineHeight: '1.6' }}>
+          Control who can use your Gates and Smart Storage Units.
+          Set rules by tribe, player, or custom conditions — all enforced on-chain.
+        </p>
+
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', margin: '24px 0 32px' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: theme.orange, fontSize: '20px', fontWeight: 700 }}>6</div>
+            <div style={{ color: theme.textMuted, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Condition Types</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: theme.orange, fontSize: '20px', fontWeight: 700 }}>100+</div>
+            <div style={{ color: theme.textMuted, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Tests</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: theme.orange, fontSize: '20px', fontWeight: 700 }}>On-Chain</div>
+            <div style={{ color: theme.textMuted, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Fully Decentralized</div>
+          </div>
+        </div>
+
+        <div style={{ background: theme.panelBg, border: `1px solid ${theme.border}`, padding: '16px', marginBottom: '24px', textAlign: 'left' }}>
+          <p className="text-xs mb-2" style={{ color: theme.textPrimary, fontWeight: 600 }}>How it works</p>
+          <ol className="text-xs space-y-1" style={{ color: theme.textSecondary, paddingLeft: '16px', lineHeight: '1.6' }}>
+            <li>Install ef guard on your buildings from the <strong style={{ color: theme.textPrimary }}>Buildings</strong> page</li>
+            <li>Create rules — allow your tribe, block a player, open to everyone</li>
+            <li>Group buildings together and apply rules in one click</li>
+            <li>Rules are enforced on-chain — no server, no trust required</li>
+          </ol>
+        </div>
+
+        <p className="text-xs mb-4" style={{ color: theme.textMuted }}>
+          Connect your EVE Vault wallet to get started.
+        </p>
       </div>
     )
   }
