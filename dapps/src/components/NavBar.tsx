@@ -14,7 +14,10 @@ export function NavBar() {
       className="px-4 py-2 flex items-center gap-6"
       style={{ background: theme.headerBg, borderBottom: `1px solid ${theme.border}`, position: 'relative', zIndex: 1 }}
     >
-      <img src="./logo-with-text.png" alt="ef guard" style={{ height: '36px' }} />
+      <div className="flex items-center gap-2">
+        <img src="./logo.png" alt="ef guard" style={{ height: '28px' }} />
+        <span style={{ color: theme.textPrimary, fontWeight: 700, fontSize: '14px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>EF GUARD</span>
+      </div>
       <div className="flex items-center gap-1 flex-1">
         {links.map(({ to, label }) => (
           <NavLink
