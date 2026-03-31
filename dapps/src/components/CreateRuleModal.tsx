@@ -41,7 +41,7 @@ export function CreateRuleModal({
   const [charNotFound, setCharNotFound] = useState(false)
   const [tribeQuery, setTribeQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
-  const { data: tribes } = useTribes()
+  const { data: tribes, isLoading: tribesLoading } = useTribes()
   const searchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -151,6 +151,22 @@ export function CreateRuleModal({
               onFocus={() => setShowSearch(true)}
               autoFocus
             />
+            {showSearch && tribesLoading && (
+              <div
+                className="absolute z-10 mt-1 w-full px-2 py-2 text-xs"
+                style={{ background: theme.panelBg, border: `1px solid ${theme.border}`, color: theme.textSecondary }}
+              >
+                Loading tribes...
+              </div>
+            )}
+            {showSearch && !tribesLoading && filtered.length === 0 && tribeQuery.trim().length > 0 && (
+              <div
+                className="absolute z-10 mt-1 w-full px-2 py-2 text-xs"
+                style={{ background: theme.panelBg, border: `1px solid ${theme.border}`, color: theme.textMuted }}
+              >
+                No tribes found for "{tribeQuery.trim()}"
+              </div>
+            )}
             {showSearch && filtered.length > 0 && (
               <ul
                 className="absolute z-10 mt-1 w-full shadow-lg max-h-40 overflow-y-auto"
