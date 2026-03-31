@@ -8,7 +8,7 @@
  */
 import { useState, useEffect } from 'react'
 import { useConnection, useSmartObject } from '@evefrontier/dapp-kit'
-import { fetchPoliciesForAssembly, type OnChainRule } from '../lib/chain-policies'
+import { fetchPoliciesForAssembly, fetchAllBindings, type OnChainRule, type BindingSummary } from '../lib/chain-policies'
 import { AsciiBackground } from '../components/AsciiBackground'
 
 const C = {
@@ -34,6 +34,8 @@ export function InGameView() {
 
   const [rules, setRules] = useState<OnChainRule[]>([])
   const [rulesLoading, setRulesLoading] = useState(false)
+  const [bindings, setBindings] = useState<BindingSummary[]>([])
+  const [bindingsLoading, setBindingsLoading] = useState(false)
 
   useEffect(() => {
     if (!isConnected && hasEveVault) handleConnect()
@@ -50,7 +52,17 @@ export function InGameView() {
       .finally(() => setRulesLoading(false))
   }, [assemblyId])
 
-  const loading = assemblyLoading || rulesLoading
+  // Fallback: if no specific assembly, load all bindings
+  useEffect(() => {
+    if (assemblyId || assemblyLoading) return
+    setBindingsLoading(true)
+    fetchAllBindings()
+      .then(setBindings)
+      .catch(console.error)
+      .finally(() => setBindingsLoading(false))
+  }, [assemblyId, assemblyLoading])
+
+  const loading = assemblyLoading || rulesLoading || bindingsLoading
   const name = assembly?.name ?? 'Building'
   const status = assembly?.state === 'online' ? 'ONLINE' : assembly ? 'OFFLINE' : null
   const raw = assembly?._raw?.contents?.json as Record<string, any> | undefined
@@ -76,18 +88,39 @@ export function InGameView() {
           )}
 
           {isConnected && !assembly && !loading && (
-            <div style={panelStyle}>
-              <div style={headerStyle}>ef guard</div>
-              <div style={{ padding: '20px', color: C.textMuted, textAlign: 'center' }}>
-                This building has ef guard access control installed.
-                Interact with a specific building to see its rules.
-              </div>
-              <div style={{ padding: '10px', fontSize: '9px', color: C.textMuted, wordBreak: 'break-all' }}>
-                <div>search: {window.location.search || '(empty)'}</div>
-                <div>hash: {window.location.hash || '(empty)'}</div>
-                <div>href: {window.location.href}</div>
-              </div>
-            </div>
+            <>
+              {bindings.flatMap((b) =>
+                b.policies.filter((p) => p.rules.length > 0).map((p) => (
+                  <div key={p.assemblyId} style={{ ...panelStyle, marginBottom: 8 }}>
+                    <div style={headerStyle}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Building {p.assemblyId.slice(0, 8)}...{p.assemblyId.slice(-4)}</span>
+                        <span style={{ color: C.orange }}>PROTECTED</span>
+                      </div>
+                    </div>
+                    {p.rules.map((r, i) => (
+                      <div key={r.conditionId} style={{ ...rowStyle, ...(i === p.rules.length - 1 ? { borderBottom: 'none' } : {}) }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ color: C.textMuted, width: '16px' }}>{String(i + 1).padStart(2, '0')}</span>
+                          <span style={{ color: C.textPrimary, fontSize: '11px' }}>{r.label}</span>
+                        </div>
+                        <span style={{ color: r.effect === 'Allow' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                          {r.effect}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))
+              )}
+              {bindings.length === 0 && (
+                <div style={panelStyle}>
+                  <div style={headerStyle}>ef guard</div>
+                  <div style={{ padding: '20px', color: C.textMuted, textAlign: 'center' }}>
+                    No ef guard policies found on-chain.
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {isConnected && assembly && !loading && (
