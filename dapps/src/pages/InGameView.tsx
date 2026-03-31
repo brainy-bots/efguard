@@ -45,21 +45,25 @@ export function InGameView() {
   const assemblyId = assembly?.id ?? null
   useEffect(() => {
     if (!assemblyId) return
+    let stale = false
     setRulesLoading(true)
     fetchPoliciesForAssembly(assemblyId)
-      .then(setRules)
+      .then((r) => { if (!stale) setRules(r) })
       .catch(console.error)
-      .finally(() => setRulesLoading(false))
+      .finally(() => { if (!stale) setRulesLoading(false) })
+    return () => { stale = true }
   }, [assemblyId])
 
   // Fallback: if no specific assembly, load all bindings
   useEffect(() => {
     if (assemblyId || assemblyLoading) return
+    let stale = false
     setBindingsLoading(true)
     fetchAllBindings()
-      .then(setBindings)
+      .then((b) => { if (!stale) setBindings(b) })
       .catch(console.error)
-      .finally(() => setBindingsLoading(false))
+      .finally(() => { if (!stale) setBindingsLoading(false) })
+    return () => { stale = true }
   }, [assemblyId, assemblyLoading])
 
   const loading = assemblyLoading || rulesLoading || bindingsLoading

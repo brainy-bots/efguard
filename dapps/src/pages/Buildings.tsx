@@ -85,6 +85,7 @@ export function Buildings() {
   const [expectedUrls, setExpectedUrls] = useState<Record<string, string>>({})
 
   // Precompute expected DApp URLs for all assemblies
+  const assemblyIds = owned?.assemblies.map((a) => a.id).join(',') ?? ''
   useEffect(() => {
     if (!owned?.assemblies.length) return
     Promise.all(
@@ -95,7 +96,7 @@ export function Buildings() {
     ).then((pairs) => {
       setExpectedUrls(Object.fromEntries(pairs))
     }).catch(console.error)
-  }, [owned?.assemblies])
+  }, [assemblyIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-discover existing binding
   useEffect(() => {

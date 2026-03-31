@@ -62,7 +62,7 @@ export function Overview() {
         localStorage.setItem(storageKey('binding-id', walletAddress), mine.address)
       }
     }).catch(console.error)
-  }, [walletAddress, bindingId])
+  }, [walletAddress]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drag state
   const dragItem = useRef<{ groupId: string; entryId: string } | null>(null)
