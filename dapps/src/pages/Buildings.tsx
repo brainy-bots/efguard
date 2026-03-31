@@ -20,15 +20,34 @@ function supportsExtension(a: OwnedAssembly): boolean {
   return ['gate', 'ssu'].includes(a.type)
 }
 
-function hasEfGuardExtension(a: OwnedAssembly): boolean {
+function getExtensionStr(a: OwnedAssembly): string {
   const ext = a.details?.extension
-  if (!ext) return false
-  const extStr = typeof ext === 'string' ? ext : typeof ext === 'object' ? JSON.stringify(ext) : ''
-  return extStr.includes(EFGUARD_PKG)
+  if (!ext) return ''
+  if (typeof ext === 'string') return ext
+  if (typeof ext === 'object' && (ext as any).name) return (ext as any).name
+  return JSON.stringify(ext)
+}
+
+function getExtensionDisplayName(a: OwnedAssembly): string {
+  const raw = getExtensionStr(a)
+  if (!raw) return ''
+  // Format: "pkgId::module::Type" → "module::Type"
+  const parts = raw.split('::')
+  if (parts.length >= 3) return parts.slice(1).join('::')
+  return raw
+}
+
+function hasEfGuardExtension(a: OwnedAssembly): boolean {
+  return getExtensionStr(a).includes(EFGUARD_PKG)
+}
+
+function isOldEfGuard(a: OwnedAssembly): boolean {
+  const ext = getExtensionStr(a)
+  return !ext.includes(EFGUARD_PKG) && ext.includes('EfGuard')
 }
 
 function hasOtherExtension(a: OwnedAssembly): boolean {
-  return !!a.details?.extension && !hasEfGuardExtension(a)
+  return !!a.details?.extension && !hasEfGuardExtension(a) && !isOldEfGuard(a)
 }
 
 export function Buildings() {
@@ -296,8 +315,13 @@ export function Buildings() {
                       {hasEfGuardExtension(a) && (
                         <span className="text-[10px] font-semibold" style={{ color: theme.green }}>ef_guard active</span>
                       )}
+                      {isOldEfGuard(a) && (
+                        <span className="text-[10px] font-semibold" style={{ color: '#eab308' }}>ef_guard (old version)</span>
+                      )}
                       {hasOtherExtension(a) && (
-                        <span className="text-[10px] font-semibold" style={{ color: '#eab308' }}>Other extension</span>
+                        <span className="text-[10px] font-semibold" style={{ color: '#eab308' }} title={getExtensionDisplayName(a)}>
+                          {getExtensionDisplayName(a) || 'Other extension'}
+                        </span>
                       )}
                       {supportsExtension(a) && (
                         <button
@@ -306,7 +330,7 @@ export function Buildings() {
                           className="disabled:opacity-50"
                           style={S.btn}
                         >
-                          {isInstalling ? 'Installing...' : hasEfGuardExtension(a) ? 'Reinstall' : hasOtherExtension(a) ? 'Replace with ef_guard' : 'Install ef_guard'}
+                          {isInstalling ? 'Installing...' : hasEfGuardExtension(a) ? 'Reinstall' : isOldEfGuard(a) ? 'Upgrade ef_guard' : hasOtherExtension(a) ? 'Replace with ef_guard' : 'Install ef_guard'}
                         </button>
                       )}
                       {a.type === 'assembly' && (
