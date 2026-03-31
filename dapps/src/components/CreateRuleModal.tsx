@@ -55,11 +55,11 @@ export function CreateRuleModal({
   const q = tribeQuery.trim().toLowerCase()
   const qWords = q.split(/\s+/).filter(Boolean)
   const filtered = tribes?.filter((t) => {
-    if (qWords.length === 0) return false
+    if (qWords.length === 0) return true // show all when empty
     const haystack = `${t.name} ${t.nameShort} ${t.id}`.toLowerCase()
     return qWords.every((w) => haystack.includes(w))
   }).sort((a, b) => {
-    // Exact name/tag match first, then alphabetical
+    if (qWords.length === 0) return a.name.localeCompare(b.name)
     const aExact = a.name.toLowerCase() === q || a.nameShort.toLowerCase() === q
     const bExact = b.name.toLowerCase() === q || b.nameShort.toLowerCase() === q
     if (aExact && !bExact) return -1
