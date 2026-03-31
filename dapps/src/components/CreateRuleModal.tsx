@@ -11,9 +11,15 @@ function useTribes() {
   return useQuery({
     queryKey: ['datahub-tribes'],
     queryFn: async (): Promise<TribeInfo[]> => {
-      const res = await fetch(`${DATAHUB_API_URL}/v2/tribes`)
+      const res = await fetch(`${DATAHUB_API_URL}/v2/tribes?limit=500`)
       const data = await res.json()
-      return (data.data ?? []) as TribeInfo[]
+      // Deduplicate by ID (API sometimes returns duplicates)
+      const seen = new Set<number>()
+      const unique: TribeInfo[] = []
+      for (const t of (data.data ?? []) as TribeInfo[]) {
+        if (!seen.has(t.id)) { seen.add(t.id); unique.push(t) }
+      }
+      return unique
     },
     staleTime: 5 * 60_000,
   })
@@ -47,13 +53,19 @@ export function CreateRuleModal({
   }, [])
 
   const q = tribeQuery.trim().toLowerCase()
-  const filtered = tribes?.filter((t) =>
-    q.length > 0 && (
-      t.name.toLowerCase().includes(q) ||
-      t.nameShort.toLowerCase().includes(q) ||
-      String(t.id).includes(q)
-    ),
-  ).slice(0, 10) ?? []
+  const qWords = q.split(/\s+/).filter(Boolean)
+  const filtered = tribes?.filter((t) => {
+    if (qWords.length === 0) return false
+    const haystack = `${t.name} ${t.nameShort} ${t.id}`.toLowerCase()
+    return qWords.every((w) => haystack.includes(w))
+  }).sort((a, b) => {
+    // Exact name/tag match first, then alphabetical
+    const aExact = a.name.toLowerCase() === q || a.nameShort.toLowerCase() === q
+    const bExact = b.name.toLowerCase() === q || b.nameShort.toLowerCase() === q
+    if (aExact && !bExact) return -1
+    if (!aExact && bExact) return 1
+    return a.name.localeCompare(b.name)
+  }).slice(0, 20) ?? []
 
   async function handleCharLookup() {
     const id = charId.trim()
