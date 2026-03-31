@@ -78,6 +78,71 @@ export function Buildings() {
     }).catch(console.error)
   }, [walletAddress])
 
+  async function handleUpdateUrl(assembly: OwnedAssembly) {
+    if (!owned?.characterId) return
+    const charId = owned.characterId
+    const assemblyType = assembly.type === 'assembly' ? 'ssu' : assembly.type as AssemblyType
+
+    setInstalling(assembly.id)
+    setResult(null)
+
+    try {
+      const capDetail = await executeGraphQLQuery<{
+        object: { version: number; digest: string }
+      }>(
+        `query ($addr: SuiAddress!) { object(address: $addr) { version digest } }`,
+        { addr: assembly.ownerCapId },
+      )
+      const version = String(capDetail.data?.object?.version ?? '')
+      const digest = capDetail.data?.object?.digest ?? ''
+      if (!version || !digest) {
+        setResult({ id: assembly.id, ok: false, msg: 'Could not fetch OwnerCap details' })
+        return
+      }
+
+      const tx = new Transaction()
+      const worldTypeMap: Record<string, string> = {
+        gate: `${WORLD_PKG}::gate::Gate`,
+        turret: `${WORLD_PKG}::turret::Turret`,
+        ssu: `${WORLD_PKG}::storage_unit::StorageUnit`,
+      }
+
+      const [cap, receipt] = tx.moveCall({
+        target: `${WORLD_PKG}::character::borrow_owner_cap`,
+        typeArguments: [worldTypeMap[assemblyType]],
+        arguments: [
+          tx.object(charId),
+          tx.receivingRef({ objectId: assembly.ownerCapId, version, digest }),
+        ],
+      })
+
+      const updateUrlTarget = assemblyType === 'gate'
+        ? `${WORLD_PKG}::gate::update_metadata_url`
+        : assemblyType === 'turret'
+          ? `${WORLD_PKG}::turret::update_metadata_url`
+          : `${WORLD_PKG}::storage_unit::update_metadata_url`
+
+      tx.moveCall({
+        target: updateUrlTarget,
+        arguments: [tx.object(assembly.id), cap, tx.pure.string(DAPP_URL)],
+      })
+
+      tx.moveCall({
+        target: `${WORLD_PKG}::character::return_owner_cap`,
+        typeArguments: [worldTypeMap[assemblyType]],
+        arguments: [tx.object(charId), cap, receipt],
+      })
+
+      await dAppKit.signAndExecuteTransaction({ transaction: tx })
+      setResult({ id: assembly.id, ok: true, msg: 'DApp URL updated!' })
+      await qc.invalidateQueries({ queryKey: ['owned-assemblies'] })
+    } catch (err) {
+      setResult({ id: assembly.id, ok: false, msg: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setInstalling(null)
+    }
+  }
+
   async function handleInstall(assembly: OwnedAssembly) {
     if (!owned?.characterId) return
 
@@ -307,7 +372,10 @@ export function Buildings() {
                         <p className="text-[10px] mt-0.5" style={{ color: theme.textSecondary }}>{d.description}</p>
                       )}
                       {d?.dappUrl && (
-                        <p className="text-[10px] mt-0.5" style={{ color: theme.textMuted }}>DApp: {d.dappUrl}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: d.dappUrl === DAPP_URL ? theme.textMuted : theme.orange }}>
+                          DApp: {d.dappUrl}
+                          {d.dappUrl !== DAPP_URL && ' (outdated)'}
+                        </p>
                       )}
                     </div>
 
@@ -331,6 +399,16 @@ export function Buildings() {
                           style={S.btn}
                         >
                           {isInstalling ? 'Installing...' : hasEfGuardExtension(a) ? 'Reinstall' : isOldEfGuard(a) ? 'Upgrade ef_guard' : hasOtherExtension(a) ? 'Replace with ef_guard' : 'Install ef_guard'}
+                        </button>
+                      )}
+                      {d?.dappUrl && d.dappUrl !== DAPP_URL && hasEfGuardExtension(a) && (
+                        <button
+                          onClick={() => handleUpdateUrl(a)}
+                          disabled={isInstalling}
+                          className="disabled:opacity-50"
+                          style={S.btnSmall}
+                        >
+                          Update URL
                         </button>
                       )}
                       {a.type === 'assembly' && (
