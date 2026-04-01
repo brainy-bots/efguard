@@ -96,19 +96,84 @@ public fun verify<T: key>(condition: &TokenHolderCondition, ctx: &EvalContext, t
 Any developer can create a new condition module without touching ef_guard:
 
 ```move
-module my_package::my_condition {
+/// Example: only allow players whose game ID is even (silly but concrete)
+module my_package::condition_even_id {
     use ef_guard::assembly_binding::{Self, EvalContext, ConditionProof};
 
-    public struct MyCondition has key, store { id: UID, /* config */ }
+    public struct EvenIdCondition has key, store { id: UID }
 
-    public fun verify(condition: &MyCondition, ctx: &EvalContext): ConditionProof {
-        let passed = /* your logic here, using ctx fields */;
+    public fun new(ctx: &mut TxContext): EvenIdCondition {
+        EvenIdCondition { id: object::new(ctx) }
+    }
+
+    public fun share(condition: EvenIdCondition) {
+        transfer::share_object(condition);
+    }
+
+    public fun verify(condition: &EvenIdCondition, ctx: &EvalContext): ConditionProof {
+        let passed = assembly_binding::ctx_char_game_id(ctx) % 2 == 0;
         assembly_binding::new_condition_proof(object::id(condition), passed)
     }
 }
 ```
 
 That's it. No registration, no approval, no changes to ef_guard. The owner adds a rule referencing your condition's object ID, and it works.
+
+### Using ef_guard in your own extension
+
+If you're building a gate extension with custom logic (tolls, bounties, etc.), import ef_guard for access control:
+
+```move
+module my_package::toll_gate {
+    use ef_guard::assembly_binding::{Self, AssemblyBinding, ConditionProof, EvalContext};
+    use ef_guard::identity_resolver;
+    use world::character::Character;
+    use world::gate::{Self, Gate};
+    use sui::coin::Coin;
+    use sui::sui::SUI;
+    use sui::clock::Clock;
+
+    public struct TollGateAuth has drop {}
+
+    /// Player pays a toll AND must pass ef_guard access rules to jump.
+    public fun jump_with_toll(
+        binding:          &AssemblyBinding,
+        condition_proofs: &vector<ConditionProof>,
+        source_gate:      &Gate,
+        dest_gate:        &Gate,
+        character:        &Character,
+        payment:          Coin<SUI>,
+        clock:            &Clock,
+        ctx:              &mut TxContext,
+    ) {
+        // 1. Check ef_guard access rules
+        let (char_game_id, _tribe_id) = identity_resolver::resolve(character);
+        let decision = assembly_binding::resolve_role(
+            binding, object::id(source_gate), char_game_id, condition_proofs,
+        );
+        assert!(assembly_binding::is_allow(&decision), 0);
+
+        // 2. Your custom logic — collect the toll
+        transfer::public_transfer(payment, @treasury);
+
+        // 3. Issue the jump permit
+        let expires_at = clock.timestamp_ms() + 3600000;
+        gate::issue_jump_permit<TollGateAuth>(
+            source_gate, dest_gate, character,
+            TollGateAuth {}, expires_at, ctx,
+        );
+    }
+}
+```
+
+Your Move.toml just needs:
+
+```toml
+[dependencies]
+ef_guard = { git = "https://github.com/brainy-bots/efguard.git", subdir = "move-contracts/ef_guard" }
+```
+
+The owner manages access rules through the ef_guard DApp or by calling `set_policy` directly. Your extension focuses on its unique logic — ef_guard handles who gets in.
 
 ## Signed attestations & the path to ZK proofs
 
