@@ -7,9 +7,12 @@
  * Uses useSmartObject() from dapp-kit to get the building the game passes via ?itemId=
  */
 import { useState, useEffect } from 'react'
-import { useConnection, useSmartObject, getObjectId } from '@evefrontier/dapp-kit'
-import { fetchPoliciesForAssembly, fetchAllBindings, type OnChainRule, type BindingSummary } from '../lib/chain-policies'
-import { TENANT } from '../env'
+import { useConnection, useSmartObject, executeGraphQLQuery } from '@evefrontier/dapp-kit'
+import { useDAppKit } from '@mysten/dapp-kit-react'
+import { Transaction } from '@mysten/sui/transactions'
+import { fetchAllBindings, type BindingSummary } from '../lib/chain-policies'
+import { useToast } from '../components/Toast'
+import { EFGUARD_PKG, WORLD_PKG } from '../env'
 import { AsciiBackground } from '../components/AsciiBackground'
 
 /** Extract itemId from anywhere in the URL — search params, hash params, or fragment */
@@ -47,67 +50,176 @@ const headerStyle = { background: C.headerBg, borderBottom: `1px solid ${C.borde
 const rowStyle = { borderBottom: `1px solid ${C.border}`, padding: '5px 10px', display: 'flex' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const }
 
 export function InGameView() {
-  const { isConnected, handleConnect, hasEveVault } = useConnection()
+  const { isConnected, walletAddress, handleConnect, hasEveVault } = useConnection()
   const { assembly, loading: assemblyLoading } = useSmartObject()
+  const dAppKit = useDAppKit()
+  const toast = useToast()
 
-  const [resolvedId, setResolvedId] = useState<string | null>(null)
-  const [rules, setRules] = useState<OnChainRule[]>([])
-  const [rulesLoading, setRulesLoading] = useState(false)
   const [bindings, setBindings] = useState<BindingSummary[]>([])
   const [bindingsLoading, setBindingsLoading] = useState(false)
+  const [requesting, setRequesting] = useState(false)
 
   useEffect(() => {
     if (!isConnected && hasEveVault) handleConnect()
   }, [isConnected, hasEveVault, handleConnect])
 
-  // Try to resolve itemId ourselves if useSmartObject doesn't find it
+  // Fetch all bindings — single source of truth for rules
   useEffect(() => {
-    if (assembly) return // dapp-kit already resolved it
-    const itemId = extractItemId()
-    if (!itemId) return
-    getObjectId(itemId, TENANT)
-      .then((objId) => setResolvedId(objId))
-      .catch(console.error)
-  }, [assembly])
-
-  // Use whichever source resolved the assembly ID
-  const assemblyId = assembly?.id ?? resolvedId
-
-  // Fetch on-chain rules when assembly is resolved
-  useEffect(() => {
-    if (!assemblyId) return
     let stale = false
-    setRulesLoading(true)
-    fetchPoliciesForAssembly(assemblyId)
-      .then((r) => { if (!stale) setRules(r) })
+    setBindingsLoading(true)
+    fetchAllBindings()
+      .then((b) => { if (!stale) setBindings(b) })
       .catch(console.error)
-      .finally(() => { if (!stale) setRulesLoading(false) })
+      .finally(() => { if (!stale) setBindingsLoading(false) })
     return () => { stale = true }
-  }, [assemblyId])
+  }, [])
 
-  // Fallback: if no specific assembly, load all bindings
-  useEffect(() => {
-    if (assemblyId || assemblyLoading) return
-    // Wait a moment for our own resolution to complete
-    const timer = setTimeout(() => {
-      if (assemblyId) return
-      let stale = false
-      setBindingsLoading(true)
-      fetchAllBindings()
-        .then((b) => { if (!stale) setBindings(b) })
-        .catch(console.error)
-        .finally(() => { if (!stale) setBindingsLoading(false) })
-      return () => { stale = true }
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [assemblyId, assemblyLoading])
+  // Match the URL's itemId against assemblies in the bindings
+  const urlItemId = extractItemId()
+  const matchedPolicy = bindings.flatMap((b) =>
+    b.policies.filter((p) => p.rules.length > 0)
+  ).find((p) => p.gameItemId === urlItemId)
 
-  const loading = assemblyLoading || rulesLoading || bindingsLoading
-  const name = assembly?.name ?? (assemblyId ? 'Building' : null)
-  const status = assembly?.state === 'online' ? 'ONLINE' : assembly ? 'OFFLINE' : null
-  const raw = assembly?._raw?.contents?.json as Record<string, any> | undefined
-  const hasExtension = !!raw?.extension
-  const hasSpecificBuilding = !!assemblyId && rules.length > 0
+  // Also check if useSmartObject resolved it
+  const assemblyId = assembly?.id ?? null
+  const matchedByObjectId = assemblyId
+    ? bindings.flatMap((b) => b.policies).find((p) => p.assemblyId === assemblyId)
+    : null
+
+  const specificPolicy = matchedPolicy ?? matchedByObjectId
+  const isGate = specificPolicy?.assemblyType === 'gate'
+  const loading = assemblyLoading || bindingsLoading
+  const name = assembly?.name ?? specificPolicy?.assemblyName ?? null
+
+  async function handleRequestPermit() {
+    if (!specificPolicy || !walletAddress) return
+    setRequesting(true)
+    try {
+      const gateId = specificPolicy.assemblyId
+      const bindingForGate = bindings.find((b) =>
+        b.policies.some((p) => p.assemblyId === gateId),
+      )
+      if (!bindingForGate) throw new Error('Binding not found')
+
+      // Find the GateExtensionConfig for this gate
+      const configType = `${EFGUARD_PKG}::gate_extension::GateExtensionConfig`
+      const configRes = await executeGraphQLQuery<{
+        objects: { nodes: Array<{ address: string; asMoveObject: { contents: { json: { gate_id: string } } } }> }
+      }>(
+        `query ($type: String!) { objects(filter: { type: $type }, first: 20) { nodes { address asMoveObject { contents { json } } } } }`,
+        { type: configType },
+      )
+      const config = configRes.data?.objects?.nodes?.find(
+        (n) => n.asMoveObject?.contents?.json?.gate_id === gateId,
+      )
+      if (!config) throw new Error('Gate config not found')
+
+      // Find the destination gate (linked gate)
+      const gateRes = await executeGraphQLQuery<{
+        object: { asMoveObject: { contents: { json: { linked_gate_id: string } } } }
+      }>(
+        `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json } } } }`,
+        { id: gateId },
+      )
+      const destGateId = gateRes.data?.object?.asMoveObject?.contents?.json?.linked_gate_id
+      if (!destGateId) throw new Error('Gate has no linked destination')
+
+      // Find player's character
+      const profileType = `${WORLD_PKG}::character::PlayerProfile`
+      const profileRes = await executeGraphQLQuery<{
+        address: { objects: { nodes: Array<{ address: string }> } }
+      }>(
+        `query ($owner: SuiAddress!, $type: String) { address(address: $owner) { objects(filter: { type: $type }, last: 1) { nodes { address } } } }`,
+        { owner: walletAddress, type: profileType },
+      )
+      const profileAddr = profileRes.data?.address?.objects?.nodes?.[0]?.address
+      if (!profileAddr) throw new Error('No character found')
+
+      const profileObj = await executeGraphQLQuery<{
+        object: { asMoveObject: { contents: { json: { character_id: string } } } }
+      }>(
+        `query ($addr: SuiAddress!) { object(address: $addr) { asMoveObject { contents { json } } } }`,
+        { addr: profileAddr },
+      )
+      const characterId = profileObj.data?.object?.asMoveObject?.contents?.json?.character_id
+      if (!characterId) throw new Error('Character ID not found')
+
+      // Find condition objects for the rules
+      const conditionIds = specificPolicy.rules.map((r) => r.conditionId)
+
+      // Build the PTB
+      const tx = new Transaction()
+
+      // Build eval context
+      const evalCtx = tx.moveCall({
+        target: `${EFGUARD_PKG}::assembly_binding::build_eval_context`,
+        arguments: [
+          tx.object(bindingForGate.bindingId),
+          tx.pure.id(gateId),
+          tx.pure.u64(0), // char_game_id — conditions will read from Character
+          tx.pure.u32(0), // tribe_id
+          tx.pure.address(walletAddress),
+        ],
+      })
+
+      // Verify each condition
+      const proofElements = []
+      for (const condId of conditionIds) {
+        // Fetch condition type
+        const condRes = await executeGraphQLQuery<{
+          object: { asMoveObject: { contents: { type: { repr: string } } } }
+        }>(
+          `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { type { repr } } } } }`,
+          { id: condId },
+        )
+        const condType = condRes.data?.object?.asMoveObject?.contents?.type?.repr ?? ''
+
+        let verifyTarget: string
+        if (condType.includes('EveryoneCondition')) {
+          verifyTarget = `${EFGUARD_PKG}::condition_everyone::verify`
+        } else if (condType.includes('TribeCondition')) {
+          verifyTarget = `${EFGUARD_PKG}::condition_tribe::verify`
+        } else if (condType.includes('CharacterCondition')) {
+          verifyTarget = `${EFGUARD_PKG}::condition_character::verify`
+        } else {
+          console.warn('[ef_guard] Unknown condition type:', condType)
+          continue
+        }
+
+        const [proof] = tx.moveCall({
+          target: verifyTarget,
+          arguments: [tx.object(condId), evalCtx[0]],
+        })
+        proofElements.push(proof)
+      }
+
+      const proofs = tx.makeMoveVec({
+        type: `${EFGUARD_PKG}::assembly_binding::ConditionProof`,
+        elements: proofElements,
+      })
+
+      // Request permit
+      tx.moveCall({
+        target: `${EFGUARD_PKG}::gate_extension::request_permit`,
+        arguments: [
+          tx.object(config.address),
+          tx.object(bindingForGate.bindingId),
+          proofs,
+          tx.object(gateId),
+          tx.object(destGateId),
+          tx.object(characterId),
+          tx.object('0x6'), // Clock
+        ],
+      })
+
+      await dAppKit.signAndExecuteTransaction({ transaction: tx })
+      toast.success('Jump permit issued! You can now jump through the gate.')
+    } catch (err) {
+      toast.error(`Permit failed: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setRequesting(false)
+    }
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.textPrimary, fontFamily: "'Segoe UI', 'Arial Narrow', Arial, sans-serif", fontSize: '11px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -128,17 +240,17 @@ export function InGameView() {
             </div>
           )}
 
-          {/* Resolved via our own parsing — show rules without full assembly details */}
-          {isConnected && !assembly && hasSpecificBuilding && !loading && (
+          {/* Specific building matched by itemId or object ID */}
+          {isConnected && specificPolicy && !loading && (
             <div style={{ ...panelStyle, marginBottom: 8 }}>
               <div style={headerStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Building</span>
+                  <span>{name ?? specificPolicy.assemblyName ?? 'Building'}</span>
                   <span style={{ color: C.orange }}>PROTECTED</span>
                 </div>
               </div>
-              {rules.map((r, i) => (
-                <div key={r.conditionId} style={{ ...rowStyle, ...(i === rules.length - 1 ? { borderBottom: 'none' } : {}) }}>
+              {specificPolicy.rules.map((r, i) => (
+                <div key={r.conditionId} style={{ ...rowStyle, ...(i === specificPolicy.rules.length - 1 && !isGate ? { borderBottom: 'none' } : {}) }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: C.textMuted, width: '16px' }}>{String(i + 1).padStart(2, '0')}</span>
                     <span style={{ color: C.textPrimary, fontSize: '11px' }}>{r.label}</span>
@@ -148,11 +260,36 @@ export function InGameView() {
                   </span>
                 </div>
               ))}
+              {isGate && isConnected && (
+                <div style={{ padding: '10px', borderTop: `1px solid ${C.border}`, textAlign: 'center' }}>
+                  <button
+                    onClick={handleRequestPermit}
+                    disabled={requesting}
+                    style={{
+                      background: C.orange,
+                      color: '#000',
+                      border: 'none',
+                      padding: '8px 24px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.1em',
+                      cursor: requesting ? 'wait' : 'pointer',
+                      opacity: requesting ? 0.6 : 1,
+                    }}
+                  >
+                    {requesting ? 'Requesting...' : 'Request Jump Permit'}
+                  </button>
+                  <p style={{ color: C.textMuted, fontSize: '9px', marginTop: '6px' }}>
+                    Get a permit, then use "Jump to" in-game
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
           {/* No specific building — show all bindings */}
-          {isConnected && !assembly && !hasSpecificBuilding && !loading && (
+          {isConnected && !specificPolicy && !loading && (
             <>
               {bindings.flatMap((b) =>
                 b.policies.filter((p) => p.rules.length > 0).map((p) => (
@@ -188,51 +325,6 @@ export function InGameView() {
             </>
           )}
 
-          {isConnected && assembly && !loading && (
-            <>
-              <div style={{ ...panelStyle, marginBottom: 8 }}>
-                <div style={headerStyle}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>{name}</span>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <span style={{ color: status === 'ONLINE' ? C.green : C.red }}>
-                        {status ?? '?'}
-                      </span>
-                      {hasExtension && (
-                        <span style={{ color: C.orange }}>PROTECTED</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {assembly.description && (
-                  <div style={{ ...rowStyle, borderBottom: 'none' }}>
-                    <span style={{ color: C.textSecondary }}>{assembly.description}</span>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ ...panelStyle, marginBottom: 8 }}>
-                <div style={headerStyle}>Access Rules</div>
-                {rules.length > 0 ? (
-                  rules.map((r, i) => (
-                    <div key={r.conditionId} style={{ ...rowStyle, ...(i === rules.length - 1 ? { borderBottom: 'none' } : {}) }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ color: C.textMuted, width: '16px' }}>{String(i + 1).padStart(2, '0')}</span>
-                        <span style={{ color: C.textPrimary, fontSize: '11px' }}>{r.label}</span>
-                      </div>
-                      <span style={{ color: r.effect === 'Allow' ? C.green : C.red, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                        {r.effect}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <div style={{ padding: '12px 10px', color: C.textMuted }}>
-                    {hasExtension ? 'No rules configured — all access denied by default.' : 'No ef guard extension installed.'}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
 
         </div>
       </div>

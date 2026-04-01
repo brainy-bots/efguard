@@ -15,6 +15,8 @@ export interface OnChainRule {
 export interface OnChainAssemblyPolicy {
   assemblyId: string
   assemblyName: string | null
+  gameItemId: string | null
+  assemblyType: 'gate' | 'ssu' | 'turret' | 'unknown'
   rules: OnChainRule[]
 }
 
@@ -106,30 +108,41 @@ function parseRules(rawRules: any[]): { conditionId: string; effectStr: 'Allow' 
   })
 }
 
-async function resolveAssemblyNames(assemblyIds: string[]): Promise<Map<string, string>> {
-  const names = new Map<string, string>()
-  if (assemblyIds.length === 0) return names
+interface AssemblyMeta { name: string | null; gameItemId: string | null; assemblyType: 'gate' | 'ssu' | 'turret' | 'unknown' }
+
+async function resolveAssemblyMeta(assemblyIds: string[]): Promise<Map<string, AssemblyMeta>> {
+  const meta = new Map<string, AssemblyMeta>()
+  if (assemblyIds.length === 0) return meta
 
   for (const id of assemblyIds) {
     try {
       const res = await executeGraphQLQuery<{
-        object: { asMoveObject: { contents: { json: any } } }
+        object: { asMoveObject: { contents: { json: any; type: { repr: string } } } }
       }>(
-        `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json } } } }`,
+        `query ($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json type { repr } } } } }`,
         { id },
       )
       const json = res.data?.object?.asMoveObject?.contents?.json
-      const name = json?.metadata?.name
-      if (name) names.set(id, name)
+      const typeRepr = res.data?.object?.asMoveObject?.contents?.type?.repr ?? ''
+      let assemblyType: AssemblyMeta['assemblyType'] = 'unknown'
+      if (typeRepr.includes('gate::Gate')) assemblyType = 'gate'
+      else if (typeRepr.includes('storage_unit::StorageUnit')) assemblyType = 'ssu'
+      else if (typeRepr.includes('turret::Turret')) assemblyType = 'turret'
+      meta.set(id, {
+        name: json?.metadata?.name ?? null,
+        gameItemId: json?.key?.item_id ? String(json.key.item_id) : null,
+        assemblyType,
+      })
     } catch { /* ignore */ }
   }
 
-  return names
+  return meta
 }
 
 /** Fetch all bindings and their policies from chain. */
 export async function fetchAllBindings(): Promise<BindingSummary[]> {
   const bindingType = `${EFGUARD_PKG}::assembly_binding::AssemblyBinding`
+
   const res = await executeGraphQLQuery<{
     objects: { nodes: Array<{ address: string; asMoveObject: { contents: { json: any } } }> }
   }>(
@@ -137,8 +150,10 @@ export async function fetchAllBindings(): Promise<BindingSummary[]> {
     { type: bindingType },
   )
 
+
   const nodes = res.data?.objects?.nodes ?? []
   const summaries: BindingSummary[] = []
+
 
   for (const n of nodes) {
     const json = n.asMoveObject?.contents?.json
@@ -159,13 +174,16 @@ export async function fetchAllBindings(): Promise<BindingSummary[]> {
     }
 
     const conditionLabels = await resolveConditionLabels([...allConditionIds])
-    const assemblyNames = await resolveAssemblyNames(allIds)
+    const assemblyMeta = await resolveAssemblyMeta(allIds)
 
     const policies: OnChainAssemblyPolicy[] = policyEntries.map((p: any) => {
       const parsed = parseRules(p.value?.rules ?? [])
+      const am = assemblyMeta.get(p.key)
       return {
         assemblyId: p.key,
-        assemblyName: assemblyNames.get(p.key) ?? null,
+        assemblyName: am?.name ?? null,
+        gameItemId: am?.gameItemId ?? null,
+        assemblyType: am?.assemblyType ?? 'unknown',
         rules: parsed.map((r) => ({
           conditionId: r.conditionId,
           effect: r.effectStr,
